@@ -30,12 +30,12 @@ Example:
 
 ```
 Sampler: Euler
-Steps: 50 (important! take a long time to anneal steadily, real_step ~= step * denoising_strength)
 Width: 832
 Heigh: 448
 Resize mode: Just Resize
+Steps: 50                   (important! take a long process to anneal steadily, real_step ~= step * denoising_strength)
+Denoising strength: 0.33    (important! take only tailing steps, usually < 0.5)
 CFG Scale: 7
-Denoising strength: 0.33 (important! make small steps, usually < 0.5)
 Seed: 114514
 
 Extracted FPS: 8
@@ -64,6 +64,15 @@ uploader: パンキッシュ
 ### How it works?
 
 ![How it works](img/How%20it%20works.png)
+
+⚪ about override sigma schedule
+
+**sigma schedule** controls how much noise is added to the latent image at each sampling step, so that the denoiser can do work against it -- it is a fight. 😃  
+more noise will allow the denoiser to repaint the canvas, while less noise will result fuzzy-glasss-like image
+
+- init noise weight: multipilier to the noise of init ref-image
+- sigma method: various schdulers to create a serial of numbers decreasing in value
+  - we recommend to try `linear` and `exponential` first to
 
 
 ### Installation

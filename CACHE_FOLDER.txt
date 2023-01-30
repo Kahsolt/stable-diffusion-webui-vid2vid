@@ -2,7 +2,6 @@
 
 <cache-folder>
 ├── <video_filename>
-│   ├── config.json               // task configs
 │   ├── ffprobe.json              // input video info (FFmpeg)
 │   ├── frames\*.(png|jpg)        // extracted frames (FFmpeg)
 │   ├── audio.wav                 // extracted audio track (FFmpeg)
@@ -11,7 +10,7 @@
 │   ├── tags-topk.txt             // predicted top-k frequent tags (DeepDanBooru)
 │   ├── latent\*.t                // predicted latent image (InvCond)
 │   ├── icond\*.t                 // predicted inverted condition (InvCond)
-│   ├── ptravel\*.png             // predicted semantically interpolated frames (prompt-travel)
+│   ├── img2img\*.png             // predicted semantically interpolated frames (img2img)
 │   ├── resr\*.png                // predicted high-resolution frames (Real-ESRGAN)
 │   ├── rife\*.png                // predicted interpolated frames (RIFE)
 │   └── synth-*.(mp4|*)           // vi2vid final output
