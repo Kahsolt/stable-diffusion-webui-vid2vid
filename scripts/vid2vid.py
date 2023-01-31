@@ -82,6 +82,7 @@ class Img2ImgMode(Enum):
     SINGLE = 'img2img (for debug)'
 
 class NoiseSched(Enum):
+    DEFAULT  = '(default)'
     KARRAS   = 'karras'
     EXP      = 'exponential'
     POLY_EXP = 'poly-exponential'
@@ -131,10 +132,10 @@ if 'global consts':
     LABEL_SIGMA_METH        = 'Sigma method'
     LABEL_SIGMA_MAX         = 'Sigma max'
     LABEL_SIGMA_MIN         = 'Sigma min'
-    LABEL_STEPS             = 'Sample step'
-    LABEL_DENOISE_W         = 'Denoising strength'
+    LABEL_STEPS             = 'Sampling steps (override)'
+    LABEL_DENOISE_W         = 'Denoising strength (override)'
     LABEL_FDC_METH          = 'Frame delta correction'
-    LABEL_MASK_LOWCUT       = 'Mask low-cut'
+    LABEL_MASK_LOWCUT       = 'Depth mask low-cut'
     LABEL_RESR_MODEL        = 'Real-ESRGAN model'
     LABEL_RIFE_MODEL        = 'RIFE model'
     LABEL_RIFE_FPS          = 'Interpolated FPS for export'
@@ -163,7 +164,7 @@ if 'global consts':
 
     DEFAULT_CACHE_FOLDER    = __(LABEL_CACHE_FOLDER, str(INIT_CACHE_FOLDER))
     DEFAULT_EXTRACT_FMT     = __(LABEL_EXTRACT_FMT, ImageFormat.JPG.value)
-    DEFAULT_EXTRACT_FPS     = __(LABEL_EXTRACT_FPS, 8)
+    DEFAULT_EXTRACT_FPS     = __(LABEL_EXTRACT_FPS, 12)
     DEFAULT_IMG2IMG_MODE    = __(LABEL_IMG2IMG_MODE, Img2ImgMode.BATCH.value)
     DEFAULT_INIT_NOISE_W    = __(LABEL_INIT_NOISE_W, 0.95)
     DEFAULT_SIGMA_OVERRIDE  = __(LABEL_SIGMA_OVERRIDE, False)
@@ -171,12 +172,12 @@ if 'global consts':
     DEFAULT_SIGMA_MAX       = __(LABEL_SIGMA_MAX, 1.2)
     DEFAULT_SIGMA_MIN       = __(LABEL_SIGMA_MIN, 0.1)
     DEFAULT_STEPS           = __(LABEL_STEPS, 20)
-    DEFAULT_DENOISE_W       = __(LABEL_DENOISE_W, 0.9)    
+    DEFAULT_DENOISE_W       = __(LABEL_DENOISE_W, 0.85)    
     DEFAULT_FDC_METH        = __(LABEL_FDC_METH, FrameDeltaCorrection.NORM.value)
     DEFAULT_MASK_LOWCUT     = __(LABEL_MASK_LOWCUT, -1)
     DEFAULT_RESR_MODEL      = __(LABEL_RESR_MODEL, 'realesr-animevideov3-x2')
     DEFAULT_RIFE_MODEL      = __(LABEL_RIFE_MODEL, 'rife-v4')
-    DEFAULT_RIFE_FPS        = __(LABEL_RIFE_FPS, 30)
+    DEFAULT_RIFE_FPS        = __(LABEL_RIFE_FPS, 24)
     DEFAULT_COMPOSE_SRC     = __(LABEL_COMPOSE_SRC, WS_RIFE)
     DEFAULT_EXPORT_FMT      = __(LABEL_EXPORT_FMT, VideoFormat.MP4.value)
     DEFAULT_ALLOW_OVERWRITE = __(LABEL_ALLOW_OVERWRITE, True)
@@ -228,7 +229,7 @@ def get_workspace_path(cache_folder:str, fn:str) -> Path:
     def safe_for_path(fn:str) -> str:
         name = fn.replace(' ', '_')
         name = name[:32]    # make things short
-        return Path(name).name
+        return Path(name).stem
 
     return Path(cache_folder) / safe_for_path(fn)
 
@@ -329,7 +330,7 @@ def task(fn:Callable[..., TaskResponse]):
             ts = None
         else:
             cur_task = fn.__name__
-            print(f'>> run task {cur_task}')
+            print(f'>> run task {cur_task[5:]!r}')      # remove '_btn_'
             state.interrupted = False
             _ts = time()
             code, info = fn(*args, **kwargs)
@@ -668,24 +669,28 @@ class Script(Script):
                     img2img_mode = gr.Radio(label=LABEL_IMG2IMG_MODE, value=lambda: DEFAULT_IMG2IMG_MODE, choices=CHOICES_IMG2IMG_MODE)
 
                 with gr.Row(variant='compact'):
-                    fdc_methd    = gr.Dropdown(label=LABEL_FDC_METH,       value=lambda: DEFAULT_FDC_METH,     choices=CHOICES_FDC_METH)
-                    mask_lowcut  = gr.Slider  (label=LABEL_MASK_LOWCUT,    value=lambda: DEFAULT_MASK_LOWCUT,  minimum=-1,  maximum=255, step=1)
-                    init_noise_w = gr.Slider  (label=LABEL_INIT_NOISE_W,   value=lambda: DEFAULT_INIT_NOISE_W, minimum=0.0, maximum=1.5, step=0.01)
-                    sigma_enable = gr.Checkbox(label=LABEL_SIGMA_OVERRIDE, value=lambda: DEFAULT_SIGMA_OVERRIDE)
+                    steps        = gr.Slider(label=LABEL_STEPS,        value=lambda: DEFAULT_STEPS,        minimum=1,   maximum=150, step=1)
+                    denoise_w    = gr.Slider(label=LABEL_DENOISE_W,    value=lambda: DEFAULT_DENOISE_W,    minimum=0.0, maximum=1.0, step=0.01)
+                    init_noise_w = gr.Slider(label=LABEL_INIT_NOISE_W, value=lambda: DEFAULT_INIT_NOISE_W, minimum=0.0, maximum=1.5, step=0.01)
 
-                with gr.Row(variant='compact', visible=DEFAULT_SIGMA_OVERRIDE) as tab_sigma:
-                    sigma_meth  = gr.Dropdown(label=LABEL_SIGMA_METH,  value=lambda: DEFAULT_SIGMA_METH, choices=CHOICES_SIGMA_METH)
-                    sigma_max   = gr.Slider  (label=LABEL_SIGMA_MAX,   value=lambda: DEFAULT_SIGMA_MAX,  minimum=0.0, maximum=5.0, step=0.01)
-                    sigma_min   = gr.Slider  (label=LABEL_SIGMA_MIN,   value=lambda: DEFAULT_SIGMA_MIN,  minimum=0.0, maximum=5.0, step=0.01)
-                    steps       = gr.Slider  (label=LABEL_STEPS,       value=lambda: DEFAULT_STEPS,     minimum=1,   maximum=150, step=1)
-                    denoise_w   = gr.Slider  (label=LABEL_DENOISE_W,   value=lambda: DEFAULT_DENOISE_W, minimum=0.0, maximum=1.0, step=0.01)
-                
-                sigma_enable.change(fn=lambda x: gr_show(x), inputs=sigma_enable, outputs=tab_sigma, show_progress=False)
+                with gr.Row(variant='compact'):
+                    sigma_meth = gr.Dropdown(label=LABEL_SIGMA_METH, value=lambda: DEFAULT_SIGMA_METH, choices=CHOICES_SIGMA_METH)
+                    sigma_max  = gr.Slider  (label=LABEL_SIGMA_MAX,  value=lambda: DEFAULT_SIGMA_MAX,  minimum=0.0, maximum=5.0, step=0.01)
+                    sigma_min  = gr.Slider  (label=LABEL_SIGMA_MIN,  value=lambda: DEFAULT_SIGMA_MIN,  minimum=0.0, maximum=5.0, step=0.01)
+
+                def sigma_meth_change(sigma_meth):
+                    show_param = NoiseSched(sigma_meth) != NoiseSched.DEFAULT
+                    return [ gr_show(show_param), gr_show(show_param) ]
+                sigma_meth.change(fn=sigma_meth_change, inputs=sigma_meth, outputs=[sigma_max, sigma_min], show_progress=False)
+
+                with gr.Row(variant='compact') as tab_bacth_i2i:
+                    fdc_methd   = gr.Dropdown(label=LABEL_FDC_METH,    value=lambda: DEFAULT_FDC_METH,    choices=CHOICES_FDC_METH)
+                    mask_lowcut = gr.Slider  (label=LABEL_MASK_LOWCUT, value=lambda: DEFAULT_MASK_LOWCUT, minimum=-1,  maximum=255, step=1)
 
                 def img2img_mode_change(img2img_mode:str):
                     is_show = Img2ImgMode(img2img_mode) == Img2ImgMode.BATCH
-                    return [ gr_show(is_show), gr_show(is_show), gr_show(is_show) ]
-                img2img_mode.change(fn=img2img_mode_change, inputs=[img2img_mode], outputs=[fdc_methd, mask_lowcut, init_noise_w], show_progress=False)
+                    return gr_show(is_show)
+                img2img_mode.change(fn=img2img_mode_change, inputs=img2img_mode, outputs=tab_bacth_i2i, show_progress=False)
 
                 gr.HTML(html.escape(r'=> expected to get img2img\*.png'))
 
@@ -726,24 +731,25 @@ class Script(Script):
             btn_interrut.click(fn=state.interrupt, show_progress=False)
 
         return [
-            img2img_mode,
-            init_noise_w, fdc_methd, mask_lowcut,
-            sigma_enable, sigma_meth, sigma_max, sigma_min, steps, denoise_w,
+            img2img_mode, fdc_methd, mask_lowcut,
+            steps, denoise_w, init_noise_w,
+            sigma_meth, sigma_max, sigma_min,
         ]
 
     def run(self, p:StableDiffusionProcessingImg2Img, 
-            img2img_mode:str,
-            init_noise_w:float, fdc_methd:str, mask_lowcut:int,
-            sigma_enable:bool, sigma_meth:str, sigma_max:float, sigma_min:float, steps:int, denoise_w:float,
+            img2img_mode:str, fdc_methd:str, mask_lowcut:int,
+            steps:int, denoise_w:float, init_noise_w:float, 
+            sigma_meth:str, sigma_max:float, sigma_min:float, 
         ):
 
+        if workspace is None:
+            return Processed(p, [], p.seed, 'no current workspace opened!')
+
         img2img_mode = Img2ImgMode(img2img_mode)
+        sigma_enable = NoiseSched(sigma_meth) != NoiseSched.DEFAULT
 
         if img2img_mode == Img2ImgMode.BATCH:
             use_mask = mask_lowcut >= 0
-
-            if workspace is None:
-                return Processed(p, [], p.seed, 'no current workspace opened!')
 
             if 'check cache exists':
                 out_dp = workspace / WS_IMG2IMG
@@ -817,7 +823,7 @@ class Script(Script):
         def cfg_denoiser_hijack(param:CFGDenoiserParams):
             print(f'>> [{param.sampling_step}/{param.total_sampling_steps}] sigma: {param.sigma[-1].item()}')
 
-        runner = img2img_mode == Img2ImgMode.BATCH if self.run_batch_img2img else self.run_img2img
+        runner = self.run_batch_img2img if img2img_mode == Img2ImgMode.BATCH else self.run_img2img
 
         on_cfg_denoiser(cfg_denoiser_hijack)
         process_images_before(p)
@@ -907,7 +913,7 @@ class Script(Script):
                     elif fdc_methd == FrameDeltaCorrection.NORM: new_d = cur_d_n * tgt_std + tgt_avg
 
                     im = (last_frame + new_d).clip(0.0, 1.0)
-                    param.image = Image.fromarray((im * np.iinfo(np.uint8).max).astype(np.uint8))
+                    param.image = Image.fromarray((im * np.iinfo(np.uint8).max).astype(np.uint8)).convert('RGB')
 
                     last_frame = im
                 else:

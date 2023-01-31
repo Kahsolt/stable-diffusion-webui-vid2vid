@@ -33,25 +33,22 @@ Sampler: Euler
 Width: 832
 Heigh: 448
 Resize mode: Just Resize
-Steps: 50                   (important! take a long process to anneal steadily, real_step ~= step * denoising_strength)
-Denoising strength: 0.33    (important! take only tailing steps, usually < 0.5)
 CFG Scale: 7
 Seed: 114514
 
-Extracted FPS: 8
+Extracted FPS: 12
 Extracted fmt: jpg
-InvCond init prompt: (masterpiece:1.3), highres, male_focus, 1boy, solo, indoors, looking_at_viewer, shirt, depth_of_field, blonde_hair, kagamine_len, black_collar, necktie, short_ponytail, spiked_hair, yellow_necktie, bass_clef, blue_eyes, headphones, white_shirt, sitting, collar, sailor_collar, short_sleeves, upper_body, brown_hair, short_hair, yellow_nails, headset, room
-InvCond steps: 32
-InvCond grad acc ratio: 1
-InvCond lr: 0.001
-Travel interp ratio: 1
-Travel damping: 1.0
+Sampling steps: 20
+Denoising strength: 0.85
 Init noise weight: 0.95
-Use mask: false
-RESR model: animevideov3
-RESR ratio: 2
+Sigma method: exponential
+Sigma sigma max: 1.2
+Sigma sigma min: 0.1
+Frame delta correction: avg & std
+Depth mask lowcut: -1
+RESR model: animevideov3-x2
 RIFE model: rife-v4
-Interp/export FPS: 30
+Interp/export FPS: 24
 Export fmt: mp4
 ```
 
