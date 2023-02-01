@@ -4,6 +4,7 @@ __pycache__/
 
 # raw design doc
 *.pptx
+*.mp4
 
 # third-party tools
 tools

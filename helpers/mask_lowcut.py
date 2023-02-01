@@ -4,8 +4,8 @@
 
 # a script to quick understand depthmask low-cut
 
-from argparse import ArgumentParser
 from PIL import Image
+from argparse import ArgumentParser
 
 import torch
 from torchvision.utils import make_grid

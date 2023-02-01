@@ -140,7 +140,8 @@ if 'global consts':
     LABEL_RIFE_MODEL        = 'RIFE model'
     LABEL_RIFE_FPS          = 'Interpolated FPS for export'
     LABEL_EXPORT_FMT        = 'Export format'
-    LABEL_COMPOSE_SRC       = 'Frame source'
+    LABEL_FRAME_SRC         = 'Frame source'
+    LABEL_WITH_AUDIO        = 'With audio'
     LABEL_ALLOW_OVERWRITE   = 'Allow overwrite cache'
 
     CHOICES_IMAGE_FMT       = [x.value for x in ImageFormat]
@@ -150,7 +151,7 @@ if 'global consts':
     CHOICES_IMG2IMG_MODE    = [x.value for x in Img2ImgMode]
     CHOICES_RESR_MODEL      = get_resr_model_names()
     CHOICES_RIFE_MODEL      = get_rife_model_names()
-    CHOICES_COMPOSE_SRC     = [
+    CHOICES_FRAME_SRC       = [
         WS_FRAMES,
         WS_MASK,
         WS_DFRAME,
@@ -178,7 +179,8 @@ if 'global consts':
     DEFAULT_RESR_MODEL      = __(LABEL_RESR_MODEL, 'realesr-animevideov3-x2')
     DEFAULT_RIFE_MODEL      = __(LABEL_RIFE_MODEL, 'rife-v4')
     DEFAULT_RIFE_FPS        = __(LABEL_RIFE_FPS, 24)
-    DEFAULT_COMPOSE_SRC     = __(LABEL_COMPOSE_SRC, WS_RIFE)
+    DEFAULT_FRAME_SRC       = __(LABEL_FRAME_SRC, WS_RIFE)
+    DEFAULT_WITH_AUDIO      = __(LABEL_WITH_AUDIO, True)
     DEFAULT_EXPORT_FMT      = __(LABEL_EXPORT_FMT, VideoFormat.MP4.value)
     DEFAULT_ALLOW_OVERWRITE = __(LABEL_ALLOW_OVERWRITE, True)
 
@@ -580,23 +582,23 @@ def _btn_rife(rife_model:str, rife_fps:float, extract_fmt:str, extract_fps:float
         return RetCode.ERROR, e
 
 @task
-def _btn_ffmpeg_compose(export_fmt:str, rife_fps:float, extract_fmt:str, src:str) -> TaskResponse:
-    in_img = workspace / src
+def _btn_ffmpeg_compose(export_fmt:str, rife_fps:float, extract_fmt:str, frame_src:str, with_audio:bool) -> TaskResponse:
+    in_img = workspace / frame_src
     if not in_img.exists():
         return RetCode.ERROR, f'src folder not found: {in_img}'
 
     opts = ''
     in_wav = workspace / WS_AUDIO
-    if in_wav.exists():
+    if with_audio and in_wav.exists():
         opts += f' -i "{in_wav}"'
 
-    out_vid = workspace / f'{WS_SYNTH}-{src}.{export_fmt}'
+    out_vid = workspace / f'{WS_SYNTH}-{frame_src}.{export_fmt}'
     if out_vid.exists():
         if not cur_allow_overwrite:
             return RetCode.WARN, 'task "render" ignored due to cache exists'
         out_vid.unlink()
 
-    fn_ext = 'png' if src in [WS_DFRAME, WS_MASK, WS_IMG2IMG, WS_RESR] else extract_fmt
+    fn_ext = 'png' if frame_src in [WS_DFRAME, WS_MASK, WS_IMG2IMG, WS_RESR] else extract_fmt
     try:
         cmd = f'"{FFMPEG_BIN}"{opts} -framerate {rife_fps} -i "{in_img}\\%05d.{fn_ext}" -crf 20 -c:v libx264 -pix_fmt yuv420p "{out_vid}"'
         print(f'>> exec: {cmd}')
@@ -717,9 +719,10 @@ class Script(Script):
 
                 with gr.Row(variant='compact').style(equal_height=True):
                     export_fmt = gr.Dropdown(label=LABEL_EXPORT_FMT, value=lambda: DEFAULT_EXPORT_FMT, choices=CHOICES_VIDEO_FMT)
-                    compose_src = gr.Dropdown(label=LABEL_COMPOSE_SRC, value=lambda: DEFAULT_COMPOSE_SRC, choices=CHOICES_COMPOSE_SRC)
+                    frame_src  = gr.Dropdown(label=LABEL_FRAME_SRC,  value=lambda: DEFAULT_FRAME_SRC,  choices=CHOICES_FRAME_SRC)
+                    with_audio = gr.Checkbox(label=LABEL_WITH_AUDIO, value=lambda: DEFAULT_WITH_AUDIO)
                     btn_ffmpeg_compose = gr.Button('Render!')
-                    btn_ffmpeg_compose.click(fn=_btn_ffmpeg_compose, inputs=[export_fmt, rife_fps, extract_fmt, compose_src], outputs=status_info_5, show_progress=False)
+                    btn_ffmpeg_compose.click(fn=_btn_ffmpeg_compose, inputs=[export_fmt, rife_fps, extract_fmt, frame_src, with_audio], outputs=status_info_5, show_progress=False)
 
                 gr.HTML(html.escape(r'=> expected to get synth-*.mp4'))
 
@@ -887,33 +890,40 @@ class Script(Script):
             name, ext = os.path.splitext(fn)
             param.filename = os.path.join(dp, name[:5] + ext)     # just 5-digit serial number
 
+            # force RGB mode, RIFE not work on RGBA
+            param.image = param.image.convert('RGB')
+
             # frame delta consistency correction
             if fdc_methd != FrameDeltaCorrection.NONE:
                 nonlocal last_frame, iframe
 
-                def img_to_im(img: PILImage) -> NDArray[np.float16]:
-                    return np.asarray(img.convert('RGB'), dtype=np.float16) / 255.0
+                def img_to_im(img: PILImage) -> NDArray[np.float32]:
+                    return np.asarray(img, dtype=np.float32) / 255.0
 
                 if last_frame is not None:
-                    this_frame = img_to_im(param.image)
+                    this_frame = img_to_im(param.image) # [0.0, 1.0]
                     H, W, C = this_frame.shape
                     cur_d = this_frame - last_frame     # [-1.0, 1.0]
                     cur_d_t = torch.from_numpy(cur_d)
                     cur_avg = cur_d_t.mean(axis=[0, 1], keepdims=True).numpy()
                     cur_std = cur_d_t.std (axis=[0, 1], keepdims=True).numpy()
+                    if cur_std.min() <= np.finfo(np.float32).min: cur_std = 1e-3
                     cur_d_n = (cur_d - cur_avg) / cur_std
 
                     tgt_d = get_dframe(iframe, W, H)    # [-1.0, 1.0]
                     tgt_d_t = torch.from_numpy(tgt_d)
                     tgt_avg = tgt_d_t.mean(axis=[0, 1], keepdims=True).numpy()
                     tgt_std = tgt_d_t.std (axis=[0, 1], keepdims=True).numpy()
+                    if tgt_std.min() <= np.finfo(np.float32).min: tgt_std = 1e-3
+
+                    breakpoint()
 
                     if   fdc_methd == FrameDeltaCorrection.AVG:  new_d = cur_d_n * cur_std + tgt_avg
                     elif fdc_methd == FrameDeltaCorrection.STD:  new_d = cur_d_n * tgt_std + cur_avg
                     elif fdc_methd == FrameDeltaCorrection.NORM: new_d = cur_d_n * tgt_std + tgt_avg
 
                     im = (last_frame + new_d).clip(0.0, 1.0)
-                    param.image = Image.fromarray((im * np.iinfo(np.uint8).max).astype(np.uint8)).convert('RGB')
+                    param.image = Image.fromarray((im * np.iinfo(np.uint8).max).astype(np.uint8))
 
                     last_frame = im
                 else:
