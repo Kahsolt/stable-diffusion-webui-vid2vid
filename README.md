@@ -1,6 +1,6 @@
 # stable-diffusion-webui-vid2vid
 
-    Translate a video to some AI generated stuff, extension script for AUTOMATIC1111/stable-diffusion-webui.
+    Translate a video to AI generated video, extension script for AUTOMATIC1111/stable-diffusion-webui.
 
 ----
 
@@ -16,19 +16,29 @@
 
 ![:stable-diffusion-webui-vid2vid](https://count.getloli.com/get/@:stable-diffusion-webui-vid2vid)
 
-Convert a video to an AI generated video through a pipeline of model neural models: Stable-Diffusion, DeepDanbooru, Midas, Real-ESRGAN, RIFE, etc. 
-
+Convert a video to an AI generated video through a pipeline of model neural models: Stable-Diffusion, DeepDanbooru, Midas, Real-ESRGAN, RIFE, etc.  
 Although it sounds like the old joke that an English wizard turns a walnut into another walnut by reciting a tongue-twisting spell. 🤣  
-Whatsoever, this synthesized videos should be essentially smoother than simple frame-to-frame img2img with post interpolation, due to the ability of semantical latent space interploation enabled by [prompt-travel](https://github.com/Kahsolt/stable-diffusion-webui-prompt-travel). 😉
+
 
 Example: 
 
 | original | rendered |
 | :-: | :-: |
-| ![original](img/original.webm) | ![rendered](img/rendered.webm) |
+| ![original](img/original.gif) | ![rendered](img/rendered.gif) |
 
+demp source:
+
+  - title:【LEN/MMD】和风模组面前耍大刀【青月/蓝铁/妖狐】
+  - url: [https://www.bilibili.com/video/BV1Vd4y1L7Q9](https://www.bilibili.com/video/BV1Vd4y1L7Q9)
+  - bid: BV1Vd4y1L7Q9
+  - uploader: パンキッシュ
+
+parameters:
 
 ```
+Prompts: (masterpiece:1.3), highres, kagamine_len, male_focus, 1boy, solo, indoors, looking_at_viewer, shirt, blurry_foreground, depth_of_field, blonde_hai , black_collar, necktie, short_ponytail, spiked_hair, yellow_necktie, bass_clef, blue_eyes, headphones, white_shirt, sitting, collar, sailor_collar, short_sleeves, upper_body, brown_hair, short_hair, yellow_nails, headset, room
+Negative prompt: (((nsfw))), ugly,duplicate,morbid,mutilated,tranny,trans,trannsexual,mutation,deformed,long neck,bad anatomy,bad proportions,extra arms,extra legs, disfigured,more than 2 nipples,malformed,mutated,hermaphrodite,out of frame,extra limbs,missing arms,missing legs,poorly drawn hands,poorty drawn face,mutation,poorly drawn,long body,multiple breasts,cloned face,gross proportions, mutated hands,bad hands,bad feet,long neck,missing limb,malformed limbs,malformed hands,fused fingers,too many fingers,extra fingers,missing fingers,extra digit,fewer digits,mutated hands and fingers,lowres,text,error,cropped,worst quality,low quality,normal quality,jpeg artifacts,signature,watermark,username,blurry,text font ufemale focus, poorly drawn, deformed, poorly drawn face, (extra leg:1.3), (extra fingers:1.2),out of frame
+
 Sampler: Euler
 Width: 832
 Heigh: 448
@@ -52,10 +62,7 @@ Interp/export FPS: 24
 Export fmt: mp4
 ```
 
-title:【LEN/MMD】和风模组面前耍大刀【青月/蓝铁/妖狐】
-url: [https://www.bilibili.com/video/BV1Vd4y1L7Q9](https://www.bilibili.com/video/BV1Vd4y1L7Q9)
-bid: BV1Vd4y1L7Q9
-uploader: パンキッシュ
+
 
 
 ### How it works?
@@ -70,6 +77,10 @@ more noise will allow the denoiser to repaint the canvas, while less noise will 
 - init noise weight: multipilier to the noise of init ref-image
 - sigma method: various schdulers to create a serial of numbers decreasing in value
   - we recommend to try `linear` and `exponential` first to
+
+=> see different schedule methods using helper script [helpers/sigma_schedule.py](helpers/sigma_schedule.py):
+
+![sigma_schedule](img/sigma_schedule.png)
 
 
 ### Installation

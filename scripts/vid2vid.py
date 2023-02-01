@@ -34,28 +34,29 @@ from modules.images import resize_image
 try:
     # should be <sd-webui> root abspath
     SD_WEBUI_PATH = Path.cwd()
+    OUTPUT_PATH = SD_WEBUI_PATH / 'outputs'
     # prompt-travel
-    PTRAVEL_PATH = Path(SD_WEBUI_PATH) / 'extensions' / 'stable-diffusion-webui-prompt-travel'
+    PTRAVEL_PATH = SD_WEBUI_PATH / 'extensions' / 'stable-diffusion-webui-prompt-travel'
     assert PTRAVEL_PATH.exists() ; sys.path.insert(0, str(PTRAVEL_PATH))
     from scripts.prompt_travel import process_images_before, process_images_after
     # bundled tools
-    TOOL_PATH   = Path(PTRAVEL_PATH) / 'tools'
-    RESR_PATH   = Path(TOOL_PATH) / 'realesrgan-ncnn-vulkan'
-    RESR_BIN    = Path(RESR_PATH) / 'realesrgan-ncnn-vulkan.exe'
-    RIFE_PATH   = Path(TOOL_PATH) / 'rife-ncnn-vulkan'
-    RIFE_BIN    = Path(RIFE_PATH) / 'rife-ncnn-vulkan.exe'
-    FFPROBE_BIN = Path(TOOL_PATH) / 'ffmpeg' / 'bin' / 'ffprobe.exe'
-    FFMPEG_BIN  = Path(TOOL_PATH) / 'ffmpeg' / 'bin' / 'ffmpeg.exe'
-    assert Path(TOOL_PATH)  .exists()
-    assert Path(RESR_BIN)   .exists()
-    assert Path(RIFE_BIN)   .exists()
-    assert Path(FFPROBE_BIN).exists()
-    assert Path(FFMPEG_BIN) .exists()
+    TOOL_PATH   = PTRAVEL_PATH / 'tools'
+    RESR_PATH   = TOOL_PATH / 'realesrgan-ncnn-vulkan'
+    RESR_BIN    = RESR_PATH / 'realesrgan-ncnn-vulkan.exe'
+    RIFE_PATH   = TOOL_PATH / 'rife-ncnn-vulkan'
+    RIFE_BIN    = RIFE_PATH / 'rife-ncnn-vulkan.exe'
+    FFPROBE_BIN = TOOL_PATH / 'ffmpeg' / 'bin' / 'ffprobe.exe'
+    FFMPEG_BIN  = TOOL_PATH / 'ffmpeg' / 'bin' / 'ffmpeg.exe'
+    assert TOOL_PATH  .exists()
+    assert RESR_BIN   .exists()
+    assert RIFE_BIN   .exists()
+    assert FFPROBE_BIN.exists()
+    assert FFMPEG_BIN .exists()
     # deepdanbooru
     from modules.deepbooru import model as deepbooru_model
     # midas
-    MIDAS_REPO_PATH  = Path(SD_WEBUI_PATH) / 'repositories' / 'midas'
-    MIDAS_MODEL_FILE = Path(SD_WEBUI_PATH) / 'models' / 'midas' / 'midas_v21_small-70d6b9c8.pt'
+    MIDAS_REPO_PATH  = SD_WEBUI_PATH / 'repositories' / 'midas'
+    MIDAS_MODEL_FILE = SD_WEBUI_PATH / 'models' / 'midas' / 'midas_v21_small-70d6b9c8.pt'
     MIDAS_MODEL_HW   = 256
     assert MIDAS_REPO_PATH .exists()
     assert MIDAS_MODEL_FILE.exists()
@@ -67,8 +68,8 @@ except:
     raise RuntimeError('<< integrity check failed, please check your installation :(')
 
 class ImageFormat(Enum):
-    JPG  = 'jpg'
     PNG  = 'png'
+    JPG  = 'jpg'
     WEBP = 'webp'
 
 class VideoFormat(Enum):
@@ -77,12 +78,20 @@ class VideoFormat(Enum):
     WEBM = 'webm'
     AVI  = 'avi'
 
+class ExtractFrame(Enum):
+    # ref: https://ottverse.com/i-p-b-frames-idr-keyframes-differences-usecases/
+    FPS = '(fixed FPS)'
+    IPB = 'I/P/B all frames'
+    I   = 'I frames only'
+    P   = 'P frames only'
+    B   = 'B frames only'
+
 class Img2ImgMode(Enum):
     BATCH  = 'batch img2img'
-    SINGLE = 'img2img (for debug)'
+    SINGLE = 'single img2img (for debug)'
 
 class NoiseSched(Enum):
-    DEFAULT  = '(default)'
+    DEFAULT  = '(use default)'
     KARRAS   = 'karras'
     EXP      = 'exponential'
     POLY_EXP = 'poly-exponential'
@@ -90,7 +99,7 @@ class NoiseSched(Enum):
     LINEAR   = 'linear'
 
 class FrameDeltaCorrection(Enum):
-    NONE = 'none'
+    NONE = '(none)'
     AVG  = 'avg'
     STD  = 'std'
     NORM = 'avg & std'
@@ -110,30 +119,35 @@ if 'global consts':
     WS_DFRAME               = 'framedelta'
     WS_MASK                 = 'depthmask'
     WS_TAGS                 = 'tags.json'
+    WS_TAGS_TOPK            = 'tags-topk.txt'
     WS_IMG2IMG              = 'img2img'
-    WS_IMG2IMG_DEBUG        = 'img2img_debug'
+    WS_IMG2IMG_DEBUG        = 'img2img.debug'
     WS_RESR                 = 'resr'
     WS_RIFE                 = 'rife'
     WS_SYNTH                = 'synth'    # stem
 
-    WS_TAGS_TOPK            = 'tags-topk.txt'
-
-    __ = lambda key, value=None: opts.data.get(f'customscript/vid2vid.py/img2img/{key}/value', value)
+    def __(key, value=None):
+        k1 = f'customscript/vid2vid.py/img2img/{key}/value'
+        if k1 in opts.data: return opts.data.get(k1, value)
+        k2 = f'img2img/{key}/value'
+        return opts.data.get(k2, value)
 
     LABEL_CACHE_FOLDER      = 'Cache Folder'
     LABEL_WORKSPACE_FOLDER  = 'Workspace Folder'
     LABEL_VIDEO_FILE        = 'Input video file'
     LABEL_VIDEO_INFO        = 'Video media info'
-    LABEL_EXTRACT_FMT       = 'Extracted file format'
+    LABEL_EXTRACT_FRAME     = 'Extract frames'
+    LABEL_EXTRACT_FMT       = 'Extracted format'
     LABEL_EXTRACT_FPS       = 'Extracted FPS'
     LABEL_IMG2IMG_MODE      = 'Img2Img mode'
-    LABEL_INIT_NOISE_W      = 'Init noise weight'
-    LABEL_SIGMA_OVERRIDE    = 'Override noise schedule'
-    LABEL_SIGMA_METH        = 'Sigma method'
-    LABEL_SIGMA_MAX         = 'Sigma max'
+    LABEL_SIGMA_METH        = 'Override sigma schedule'
+    LABEL_STEPS             = 'Sampling steps'
+    LABEL_DENOISE_W         = 'Denoising strength'
     LABEL_SIGMA_MIN         = 'Sigma min'
-    LABEL_STEPS             = 'Sampling steps (override)'
-    LABEL_DENOISE_W         = 'Denoising strength (override)'
+    LABEL_SIGMA_MAX         = 'Sigma max'
+    LABEL_INIT_NOISE_W      = 'Init noise weight'
+    LABEL_FDS_LATENT        = 'Latent delta suppression'
+    LABEL_FDS_PIXEL         = 'Frame delta suppression'
     LABEL_FDC_METH          = 'Frame delta correction'
     LABEL_MASK_LOWCUT       = 'Depth mask low-cut'
     LABEL_RESR_MODEL        = 'Real-ESRGAN model'
@@ -144,6 +158,7 @@ if 'global consts':
     LABEL_WITH_AUDIO        = 'With audio'
     LABEL_ALLOW_OVERWRITE   = 'Allow overwrite cache'
 
+    CHOICES_EXTRACT_FRAME   = [x.value for x in ExtractFrame]
     CHOICES_IMAGE_FMT       = [x.value for x in ImageFormat]
     CHOICES_VIDEO_FMT       = [x.value for x in VideoFormat]
     CHOICES_SIGMA_METH      = [x.value for x in NoiseSched]
@@ -160,20 +175,22 @@ if 'global consts':
         WS_RIFE,
     ]
 
-    INIT_CACHE_FOLDER = Path(os.environ['TMP']) / 'sd-webui-vid2vid'
+    INIT_CACHE_FOLDER = OUTPUT_PATH / 'sd-webui-vid2vid'
     INIT_CACHE_FOLDER.mkdir(exist_ok=True)
 
     DEFAULT_CACHE_FOLDER    = __(LABEL_CACHE_FOLDER, str(INIT_CACHE_FOLDER))
-    DEFAULT_EXTRACT_FMT     = __(LABEL_EXTRACT_FMT, ImageFormat.JPG.value)
+    DEFAULT_EXTRACT_FRAME   = __(LABEL_EXTRACT_FRAME, ExtractFrame.P.value)
+    DEFAULT_EXTRACT_FMT     = __(LABEL_EXTRACT_FMT, ImageFormat.PNG.value)
     DEFAULT_EXTRACT_FPS     = __(LABEL_EXTRACT_FPS, 12)
     DEFAULT_IMG2IMG_MODE    = __(LABEL_IMG2IMG_MODE, Img2ImgMode.BATCH.value)
-    DEFAULT_INIT_NOISE_W    = __(LABEL_INIT_NOISE_W, 0.95)
-    DEFAULT_SIGMA_OVERRIDE  = __(LABEL_SIGMA_OVERRIDE, False)
-    DEFAULT_SIGMA_METH      = __(LABEL_SIGMA_METH, NoiseSched.EXP.value)
+    DEFAULT_STEPS           = __(LABEL_STEPS, 20)
+    DEFAULT_DENOISE_W       = __(LABEL_DENOISE_W, 0.85)
+    DEFAULT_INIT_NOISE_W    = __(LABEL_INIT_NOISE_W, 1.0)
+    DEFAULT_SIGMA_METH      = __(LABEL_SIGMA_METH, NoiseSched.DEFAULT.value)
     DEFAULT_SIGMA_MAX       = __(LABEL_SIGMA_MAX, 1.2)
     DEFAULT_SIGMA_MIN       = __(LABEL_SIGMA_MIN, 0.1)
-    DEFAULT_STEPS           = __(LABEL_STEPS, 20)
-    DEFAULT_DENOISE_W       = __(LABEL_DENOISE_W, 0.85)    
+    DEFAULT_FDS_LATENT      = __(LABEL_FDS_LATENT, 0.1)
+    DEFAULT_FDS_PIXEL       = __(LABEL_FDS_PIXEL, 4)
     DEFAULT_FDC_METH        = __(LABEL_FDC_METH, FrameDeltaCorrection.NORM.value)
     DEFAULT_MASK_LOWCUT     = __(LABEL_MASK_LOWCUT, -1)
     DEFAULT_RESR_MODEL      = __(LABEL_RESR_MODEL, 'realesr-animevideov3-x2')
@@ -203,8 +220,9 @@ def get_file_size(fp:Union[Path, str]) -> float:
 
 
 # global runtime vars
-workspace: Path = None
 cur_cache_folder: Path = Path(DEFAULT_CACHE_FOLDER)
+workspace: Path = None
+ffprob_info: dict = None
 cur_allow_overwrite: bool = DEFAULT_ALLOW_OVERWRITE
 cur_task: str = None
 
@@ -236,12 +254,13 @@ def get_workspace_path(cache_folder:str, fn:str) -> Path:
     return Path(cache_folder) / safe_for_path(fn)
 
 def _file_select(video_file:object) -> List[GradioRequest]:
-    global workspace, cur_cache_folder
+    global cur_cache_folder, workspace, ffprob_info
 
     # close workspace
     if video_file is None:
         ws_name = workspace.name
         workspace = None
+        ffprob_info = None
 
         return [
             gr.Text.update(label=LABEL_CACHE_FOLDER, value=cur_cache_folder, interactive=True),
@@ -257,11 +276,12 @@ def _file_select(video_file:object) -> List[GradioRequest]:
         ws_name = workspace.name
 
         with open(info_fp, 'r', encoding='utf-8') as fh:
-            media_info = json.dumps(json.load(fh), indent=2, ensure_ascii=False)
+            ffprob_info = json.load(fh)
+            ffprob_info_str = json.dumps(ffprob_info, indent=2, ensure_ascii=False)
         
         return [
             gr.Text.update(label=LABEL_WORKSPACE_FOLDER, value=workspace, interactive=False),
-            gr.TextArea.update(value=media_info, visible=True),
+            gr.TextArea.update(value=ffprob_info_str, visible=True),
             gr_update_status(f'open workspace {ws_name!r}'),
         ]
     
@@ -269,18 +289,19 @@ def _file_select(video_file:object) -> List[GradioRequest]:
     cmd = f'"{FFPROBE_BIN}" -i "{video_file.name}" -show_streams -of json'
     print(f'>> exec: {cmd}')
     try:
-        media_info = json.dumps(json.loads(os.popen(cmd).read().strip()), indent=2, ensure_ascii=False)
-        
+        ffprob_info = json.loads(os.popen(cmd).read().strip())
+        ffprob_info_str = json.dumps(ffprob_info, indent=2, ensure_ascii=False)
+
         ws_dp.mkdir(parents=True)
         workspace = ws_dp
         ws_name = workspace.name
 
         with open(info_fp, 'w', encoding='utf-8') as fh:
-            fh.write(media_info)
+            fh.write(ffprob_info_str)
 
         return [
             gr.Text.update(label=LABEL_WORKSPACE_FOLDER, value=workspace, interactive=False),
-            gr.TextArea.update(value=media_info, visible=True),
+            gr.TextArea.update(value=ffprob_info_str, visible=True),
             gr_update_status(f'create new workspace {ws_name!r}'),
         ]
     except:
@@ -345,7 +366,7 @@ def task_ignore_str(taskname: str) ->str:
     return f'task "{taskname}" ignored due to cached already exists :)'
 
 @task
-def _btn_ffmpeg_extract(video_file:object, extract_fmt:str, extract_fps:float) -> TaskResponse:
+def _btn_ffmpeg_extract(video_file:object, extract_frame:str, extract_fmt:str, extract_fps:float) -> TaskResponse:
     out_dp = workspace / WS_FRAMES
     if out_dp.exists():
         if not cur_allow_overwrite:
@@ -357,16 +378,33 @@ def _btn_ffmpeg_extract(video_file:object, extract_fmt:str, extract_fps:float) -
     if out_fp.exists(): out_fp.unlink()
 
     try:
-        cmd = f'"{FFMPEG_BIN}" -i "{video_file.name}" -an -r {extract_fps} -f image2 -q:v 2 {out_dp}\\%05d.{extract_fmt}'
+        # ref: 
+        #   - https://ffmpeg.org/ffmpeg.html
+        #   - https://zhuanlan.zhihu.com/p/85895180
+        # ffprobe -i test.mp4 -v quiet -select_streams v -show_entries frame=pkt_pts_time,pict_type
+
+        extract_frame = ExtractFrame(extract_frame)
+        if extract_frame == ExtractFrame.FPS:
+            cmd = f'"{FFMPEG_BIN}" -i "{video_file.name}" -an -sn -f image2 -q:v 2 -fps_mode vfr -r {extract_fps} {out_dp}\\%05d.{extract_fmt}'
+        elif extract_frame == ExtractFrame.IPB:
+            cmd = f'"{FFMPEG_BIN}" -i "{video_file.name}" -an -sn -f image2 -q:v 2 -fps_mode vfr {out_dp}\\%05d.{extract_fmt}'
+        elif extract_frame == ExtractFrame.I:
+            cmd = f'"{FFMPEG_BIN}" -i "{video_file.name}" -an -sn -f image2 -q:v 2 -fps_mode vfr -vf "select=eq(pict_type\,I)" {out_dp}\\%05d.{extract_fmt}'
+        elif extract_frame == ExtractFrame.P:
+            cmd = f'"{FFMPEG_BIN}" -i "{video_file.name}" -an -sn -f image2 -q:v 2 -fps_mode vfr -vf "select=eq(pict_type\,P)" {out_dp}\\%05d.{extract_fmt}'
+        elif extract_frame == ExtractFrame.B:
+            cmd = f'"{FFMPEG_BIN}" -i "{video_file.name}" -an -sn -f image2 -q:v 2 -fps_mode vfr -vf "select=eq(pict_type\,B)" {out_dp}\\%05d.{extract_fmt}'
+
         print(f'>> exec: {cmd}')
         Popen(cmd, shell=True, text=True, encoding='utf-8').wait()
-        try:
-            cmd = f'"{FFMPEG_BIN}" -i "{video_file.name}" -vn "{out_fp}"'
-            Popen(cmd, shell=True, text=True, encoding='utf-8').wait()
-            has_audio = 'yes'
-        except:
-            has_audio = 'no'
-            print_exc()
+
+        has_audio = 'no'
+        for stream in ffprob_info['streams']:
+            if stream['codec_type'] == 'audio':
+                cmd = f'"{FFMPEG_BIN}" -i "{video_file.name}" -vn -sn "{out_fp}"'
+                Popen(cmd, shell=True, text=True, encoding='utf-8').wait()
+                has_audio = 'yes'
+                break
 
         return RetCode.INFO, f'frames: {get_folder_file_count(out_dp)}, audio: {has_audio}'
     except KeyboardInterrupt:
@@ -624,7 +662,7 @@ class Script(Script):
         return is_img2img
 
     def ui(self, is_img2img):
-        with gr.Blocks():
+        with gr.Group():
             with gr.Tab('1: Extract frames'):
                 status_info_1 = gr.HTML()
 
@@ -633,21 +671,24 @@ class Script(Script):
                     working_folder.change(fn=_txt_working_folder, inputs=working_folder, outputs=status_info_1, show_progress=False)
                     btn_open = gr.Button(value='\U0001f4c2', variant='tool')   # 📂
                     btn_open.click(fn=_btn_open, inputs=working_folder, outputs=status_info_1, show_progress=False)
+                
                 with gr.Row(variant='compact'):
                     video_file = gr.File(label=LABEL_VIDEO_FILE, file_types=['video'])
                     video_info = gr.TextArea(label=LABEL_VIDEO_INFO, max_lines=7, visible=False)
                     video_file.change(fn=_file_select, inputs=video_file, outputs=[working_folder, video_info, status_info_1], show_progress=False)
 
                 with gr.Row(variant='compact').style(equal_height=True):
-                    extract_fmt = gr.Dropdown(label=LABEL_EXTRACT_FMT, value=lambda: DEFAULT_EXTRACT_FMT, choices=CHOICES_IMAGE_FMT)
-                    extract_fps = gr.Slider(label=LABEL_EXTRACT_FPS, value=lambda: DEFAULT_EXTRACT_FPS, minimum=1, maximum=24, step=0.1)
+                    extract_fmt   = gr.Dropdown(label=LABEL_EXTRACT_FMT,   value=lambda: DEFAULT_EXTRACT_FMT,   choices=CHOICES_IMAGE_FMT)
+                    extract_frame = gr.Dropdown(label=LABEL_EXTRACT_FRAME, value=lambda: DEFAULT_EXTRACT_FRAME, choices=CHOICES_EXTRACT_FRAME)
+                    extract_fps   = gr.Slider  (label=LABEL_EXTRACT_FPS,   value=lambda: DEFAULT_EXTRACT_FPS,   minimum=1, maximum=24, step=0.1, visible=False)
+
+                    extract_frame.change(fn=lambda x: gr_show(ExtractFrame(x) == ExtractFrame.FPS), inputs=extract_frame, outputs=extract_fps, show_progress=False)
                     
                     btn_ffmpeg_extract = gr.Button('Extract frames!')
-                    btn_ffmpeg_extract.click(fn=_btn_ffmpeg_extract, inputs=[video_file, extract_fmt, extract_fps], outputs=status_info_1, show_progress=False)
+                    btn_ffmpeg_extract.click(fn=_btn_ffmpeg_extract, inputs=[video_file, extract_frame, extract_fmt, extract_fps], outputs=status_info_1, show_progress=False)
 
                 gr.HTML(html.escape(r'=> expected to get ffprobe.json, frames\*.jpg, audio.wav'))
 
-        with gr.Blocks():
             with gr.Tab('2: Make masks & tags'):
                 status_info_2 = gr.HTML()
 
@@ -663,40 +704,34 @@ class Script(Script):
 
                 gr.HTML(html.escape(r'=> expected to get framedelta\*.png, depthmask\*.png, tags.json, tags-topk.txt'))
 
-        with gr.Blocks():
             with gr.Tab('3: Successive Img2Img'):
                 gr.HTML(value=IMG2IMG_HELP_HTML)
 
                 with gr.Row(variant='compact'):
                     img2img_mode = gr.Radio(label=LABEL_IMG2IMG_MODE, value=lambda: DEFAULT_IMG2IMG_MODE, choices=CHOICES_IMG2IMG_MODE)
 
-                with gr.Row(variant='compact'):
-                    steps        = gr.Slider(label=LABEL_STEPS,        value=lambda: DEFAULT_STEPS,        minimum=1,   maximum=150, step=1)
-                    denoise_w    = gr.Slider(label=LABEL_DENOISE_W,    value=lambda: DEFAULT_DENOISE_W,    minimum=0.0, maximum=1.0, step=0.01)
-                    init_noise_w = gr.Slider(label=LABEL_INIT_NOISE_W, value=lambda: DEFAULT_INIT_NOISE_W, minimum=0.0, maximum=1.5, step=0.01)
+                with gr.Row(variant='compact').style(equal_height=True):
+                    fds_latent   = gr.Slider  (label=LABEL_FDS_LATENT,   value=lambda: DEFAULT_FDS_LATENT,   minimum=0.0, maximum=1.0, step=0.01)
+                    init_noise_w = gr.Slider  (label=LABEL_INIT_NOISE_W, value=lambda: DEFAULT_INIT_NOISE_W, minimum=0.0, maximum=1.0, step=0.01)
+                    sigma_meth   = gr.Dropdown(label=LABEL_SIGMA_METH,   value=lambda: DEFAULT_SIGMA_METH,   choices=CHOICES_SIGMA_METH)
 
-                with gr.Row(variant='compact'):
-                    sigma_meth = gr.Dropdown(label=LABEL_SIGMA_METH, value=lambda: DEFAULT_SIGMA_METH, choices=CHOICES_SIGMA_METH)
-                    sigma_max  = gr.Slider  (label=LABEL_SIGMA_MAX,  value=lambda: DEFAULT_SIGMA_MAX,  minimum=0.0, maximum=5.0, step=0.01)
-                    sigma_min  = gr.Slider  (label=LABEL_SIGMA_MIN,  value=lambda: DEFAULT_SIGMA_MIN,  minimum=0.0, maximum=5.0, step=0.01)
+                with gr.Row(variant='compact', visible=False).style(equal_height=True) as tab_sigma_sched:
+                    steps      = gr.Slider(label=LABEL_STEPS,      value=lambda: DEFAULT_STEPS,      minimum=1,   maximum=150, step=1)
+                    denoise_w  = gr.Slider(label=LABEL_DENOISE_W,  value=lambda: DEFAULT_DENOISE_W,  minimum=0.0, maximum=1.0, step=0.01)
+                    sigma_min  = gr.Slider(label=LABEL_SIGMA_MIN,  value=lambda: DEFAULT_SIGMA_MIN,  minimum=0.1, maximum=5.0, step=0.01)
+                    sigma_max  = gr.Slider(label=LABEL_SIGMA_MAX,  value=lambda: DEFAULT_SIGMA_MAX,  minimum=0.1, maximum=5.0, step=0.01)
 
-                def sigma_meth_change(sigma_meth):
-                    show_param = NoiseSched(sigma_meth) != NoiseSched.DEFAULT
-                    return [ gr_show(show_param), gr_show(show_param) ]
-                sigma_meth.change(fn=sigma_meth_change, inputs=sigma_meth, outputs=[sigma_max, sigma_min], show_progress=False)
+                sigma_meth.change(fn=lambda x: gr_show(NoiseSched(x) != NoiseSched.DEFAULT), inputs=sigma_meth, outputs=tab_sigma_sched, show_progress=False)
 
-                with gr.Row(variant='compact') as tab_bacth_i2i:
+                with gr.Row(variant='compact').style(equal_height=True) as tab_param_frame:
+                    fds_pixel   = gr.Slider  (label=LABEL_FDS_PIXEL,   value=lambda: DEFAULT_FDS_PIXEL,   minimum=0,  maximum=255, step=1)
                     fdc_methd   = gr.Dropdown(label=LABEL_FDC_METH,    value=lambda: DEFAULT_FDC_METH,    choices=CHOICES_FDC_METH)
-                    mask_lowcut = gr.Slider  (label=LABEL_MASK_LOWCUT, value=lambda: DEFAULT_MASK_LOWCUT, minimum=-1,  maximum=255, step=1)
+                    mask_lowcut = gr.Slider  (label=LABEL_MASK_LOWCUT, value=lambda: DEFAULT_MASK_LOWCUT, minimum=-1, maximum=255, step=1)
 
-                def img2img_mode_change(img2img_mode:str):
-                    is_show = Img2ImgMode(img2img_mode) == Img2ImgMode.BATCH
-                    return gr_show(is_show)
-                img2img_mode.change(fn=img2img_mode_change, inputs=img2img_mode, outputs=tab_bacth_i2i, show_progress=False)
+                img2img_mode.change(fn=lambda x: gr_show(Img2ImgMode(x) == Img2ImgMode.BATCH), inputs=img2img_mode, outputs=tab_param_frame, show_progress=False)
 
                 gr.HTML(html.escape(r'=> expected to get img2img\*.png'))
 
-        with gr.Blocks():
             with gr.Tab('4: Upscale & interpolate'):
                 status_info_4 = gr.HTML()
 
@@ -713,7 +748,6 @@ class Script(Script):
                 
                 gr.HTML(html.escape(r'=> expected to get resr\*.jpg, rife\*.jpg'))
 
-        with gr.Blocks():
             with gr.Tab('5: Render'):
                 status_info_5 = gr.HTML()
 
@@ -734,25 +768,34 @@ class Script(Script):
             btn_interrut.click(fn=state.interrupt, show_progress=False)
 
         return [
-            img2img_mode, fdc_methd, mask_lowcut,
-            steps, denoise_w, init_noise_w,
-            sigma_meth, sigma_max, sigma_min,
+            img2img_mode, 
+            fds_latent, init_noise_w, sigma_meth, 
+            steps, denoise_w, sigma_min, sigma_max, 
+            fds_pixel, fdc_methd, mask_lowcut, 
         ]
 
     def run(self, p:StableDiffusionProcessingImg2Img, 
-            img2img_mode:str, fdc_methd:str, mask_lowcut:int,
-            steps:int, denoise_w:float, init_noise_w:float, 
-            sigma_meth:str, sigma_max:float, sigma_min:float, 
+            img2img_mode:str, 
+            fds_latent:float, init_noise_w:float, sigma_meth:str, 
+            steps:int, denoise_w:float, sigma_min:float, sigma_max:float, 
+            fds_pixel:int, fdc_methd:str, mask_lowcut:int, 
         ):
 
-        if workspace is None:
-            return Processed(p, [], p.seed, 'no current workspace opened!')
+        sigma_override: bool = NoiseSched(sigma_meth) != NoiseSched.DEFAULT
 
-        img2img_mode = Img2ImgMode(img2img_mode)
-        sigma_enable = NoiseSched(sigma_meth) != NoiseSched.DEFAULT
+        if sigma_override:
+            if sigma_max < sigma_min:
+                return Processed(p, [], p.seed, 'error sigma_max < sigma_min!')
 
+        img2img_mode: Img2ImgMode = Img2ImgMode(img2img_mode)
+        
+        out_dp = p.outpath_samples
         if img2img_mode == Img2ImgMode.BATCH:
             use_mask = mask_lowcut >= 0
+            use_fdc = FrameDeltaCorrection(fdc_methd) != FrameDeltaCorrection.NONE
+
+            if workspace is None:
+                return Processed(p, [], p.seed, 'no current workspace opened!')
 
             if 'check cache exists':
                 out_dp = workspace / WS_IMG2IMG
@@ -767,20 +810,23 @@ class Script(Script):
                 if not frames_dp.exists():
                     return Processed(p, [], p.seed, f'frames folder not found: {frames_dp}')
 
+                n_inits = get_folder_file_count(frames_dp)
+
                 delta_dp = workspace / WS_DFRAME
-                if not delta_dp.exists():
-                    return Processed(p, [], p.seed, f'framedelta folder not found: {delta_dp}')
+                if use_fdc:
+                    if not delta_dp.exists():
+                        return Processed(p, [], p.seed, f'framedelta folder not found: {delta_dp}')
+                    n_delta = get_folder_file_count(delta_dp)
+                    if n_delta != n_inits - 1:
+                        return Processed(p, [], p.seed, f'number mismatch for n_delta ({n_delta}) != n_frames ({n_inits}) - 1')
 
                 mask_dp = workspace / WS_MASK
-                if use_mask and not mask_dp.exists():
-                    return Processed(p, [], p.seed, f'mask folder not found: {mask_dp}')
-
-            if 'check material integrity':
                 if use_mask:
-                    n_inits = get_folder_file_count(frames_dp)
+                    if not mask_dp.exists():
+                        return Processed(p, [], p.seed, f'mask folder not found: {mask_dp}')
                     n_masks = get_folder_file_count(mask_dp)
-                    if n_inits != n_masks:
-                        return Processed(p, [], p.seed, f'number mismatch for n_frames ({n_inits}) != n_masks ({n_masks})')
+                    if n_masks != n_inits:
+                        return Processed(p, [], p.seed, f'number mismatch for n_masks ({n_masks}) != n_frames ({n_inits})')
 
             self.init_dp     = frames_dp
             self.init_fns    = os.listdir(frames_dp)
@@ -788,11 +834,13 @@ class Script(Script):
             self.mask_dp     = mask_dp if use_mask else None
             self.mask_lowcut = mask_lowcut
             self.fdc_methd   = FrameDeltaCorrection(fdc_methd)
+            self.fds_pixel   = fds_pixel / 255.0
         else:
-            out_dp = workspace / WS_IMG2IMG_DEBUG
-            out_dp.mkdir(exist_ok=True)
+            if workspace is not None:
+                out_dp = workspace / WS_IMG2IMG_DEBUG
+                out_dp.mkdir(exist_ok=True)
 
-        if sigma_enable:
+        if sigma_override:
             from k_diffusion.sampling import get_sigmas_karras, get_sigmas_exponential, get_sigmas_polyexponential, get_sigmas_vp
 
             sigma_meth = NoiseSched(sigma_meth)
@@ -823,21 +871,49 @@ class Script(Script):
             p.outpath_samples     = str(out_dp)
             p.initial_noise_multiplier = init_noise_w
 
+        self.last_latent = None
         def cfg_denoiser_hijack(param:CFGDenoiserParams):
             print(f'>> [{param.sampling_step}/{param.total_sampling_steps}] sigma: {param.sigma[-1].item()}')
 
+            # suppress subtle value change by quadratic-rescale
+            if fds_latent > 0.0:
+                if self.last_latent is not None:
+                    this_latent = param.x.clone()
+
+                    cur_d = this_latent - self.last_latent      # [-inf, inf]
+                    cur_d_s = cur_d.sign()
+                    mask = cur_d.abs() < fds_latent
+                    new_d = mask * cur_d + ~mask * (1 / fds_latent) * cur_d**2 * cur_d_s
+
+                    if 'debug':
+                        print('>> cur_d.max', cur_d.max())
+                        print('>> cur_d.max', cur_d.min())
+                        print('>> cur_d.abs.max', cur_d.abs().max())
+                        print('>> cur_d.abs.max', cur_d.abs().min())
+
+                        dd = (new_d - cur_d).abs()
+                        print('>> fds_latent dd.max():', dd.max().item())
+                        print('>> fds_latent dd.mean():', dd.mean().item())
+
+                    param.x = self.last_latent + new_d
+
+                self.last_latent = param.x.clone()
+
         runner = self.run_batch_img2img if img2img_mode == Img2ImgMode.BATCH else self.run_img2img
 
-        on_cfg_denoiser(cfg_denoiser_hijack)
-        process_images_before(p)
-        images, info = runner(p)
-        process_images_after(p)
-        remove_callbacks_for_function(cfg_denoiser_hijack)
+        try:
+            on_cfg_denoiser(cfg_denoiser_hijack)
+            process_images_before(p)
+            images, info = runner(p)
+        finally:
+            process_images_after(p)
+            remove_callbacks_for_function(cfg_denoiser_hijack)
 
         # show only partial results
         return Processed(p, images[::DEFAULT_EXTRACT_FPS][:100], p.seed, info)
 
     def run_img2img(self, p:StableDiffusionProcessingImg2Img) -> Tuple[List[PILImage], str]:
+        print(f'>> save debug samples to : {p.outpath_samples}')
         proc = process_images_inner(p)
         return proc.images, proc.info
 
@@ -848,13 +924,14 @@ class Script(Script):
         mask_dp     = self.mask_dp
         mask_lowcut = self.mask_lowcut
         fdc_methd   = self.fdc_methd
-        
+        fds_pixel   = self.fds_pixel
+
         initial_info: str = None
         images: List[PILImage] = []
 
         def get_init(idx:int) -> List[PILImage]:
             return [Image.open(init_dp / init_fns[idx]).convert('RGB')]
-        
+
         def get_dframe(idx:int, w:int, h:int) -> NDArray[np.float16]:
             img = Image.open(delta_dp / Path(init_fns[idx]).with_suffix('.png'))
             img = resize_image(p.resize_mode, img, w, h)
@@ -880,7 +957,7 @@ class Script(Script):
             im = renorm_mask(im, mask_lowcut)
             return Image.fromarray(im)
 
-        last_frame:NDArray[np.float16] = None
+        last_frame:NDArray[np.float32] = None
         iframe = 0
         def image_save_hijack(param:ImageSaveParams):
             # allow path length more than 260 chars...
@@ -893,60 +970,82 @@ class Script(Script):
             # force RGB mode, RIFE not work on RGBA
             param.image = param.image.convert('RGB')
 
-            # frame delta consistency correction
-            if fdc_methd != FrameDeltaCorrection.NONE:
+            if fdc_methd != FrameDeltaCorrection.NONE or fds_pixel > 0.0:
                 nonlocal last_frame, iframe
 
                 def img_to_im(img: PILImage) -> NDArray[np.float32]:
                     return np.asarray(img, dtype=np.float32) / 255.0
 
                 if last_frame is not None:
-                    this_frame = img_to_im(param.image) # [0.0, 1.0]
-                    H, W, C = this_frame.shape
-                    cur_d = this_frame - last_frame     # [-1.0, 1.0]
-                    cur_d_t = torch.from_numpy(cur_d)
-                    cur_avg = cur_d_t.mean(axis=[0, 1], keepdims=True).numpy()
-                    cur_std = cur_d_t.std (axis=[0, 1], keepdims=True).numpy()
-                    if cur_std.min() <= np.finfo(np.float32).min: cur_std = 1e-3
-                    cur_d_n = (cur_d - cur_avg) / cur_std
+                    this_frame = img_to_im(param.image)     # [0.0, 1.0]
 
-                    tgt_d = get_dframe(iframe, W, H)    # [-1.0, 1.0]
-                    tgt_d_t = torch.from_numpy(tgt_d)
-                    tgt_avg = tgt_d_t.mean(axis=[0, 1], keepdims=True).numpy()
-                    tgt_std = tgt_d_t.std (axis=[0, 1], keepdims=True).numpy()
-                    if tgt_std.min() <= np.finfo(np.float32).min: tgt_std = 1e-3
+                    # frame-delta consistency correction
+                    if fdc_methd != FrameDeltaCorrection.NONE:
+                        cur_d = this_frame - last_frame         # [-1.0, 1.0]
+                        cur_d_t = torch.from_numpy(cur_d)
+                        cur_avg = cur_d_t.mean(axis=[0, 1], keepdims=True).numpy()
+                        cur_std = cur_d_t.std (axis=[0, 1], keepdims=True).numpy()
+                        if cur_std.min() <= np.finfo(np.float32).min: cur_std = 1e-3
+                        cur_d_n = (cur_d - cur_avg) / cur_std
 
-                    breakpoint()
+                        H, W, C = this_frame.shape
+                        tgt_d = get_dframe(iframe, W, H)        # [-1.0, 1.0]
+                        tgt_d_t = torch.from_numpy(tgt_d)
+                        tgt_avg = tgt_d_t.mean(axis=[0, 1], keepdims=True).numpy()
+                        tgt_std = tgt_d_t.std (axis=[0, 1], keepdims=True).numpy()
+                        if tgt_std.min() <= np.finfo(np.float32).min: tgt_std = 1e-3
 
-                    if   fdc_methd == FrameDeltaCorrection.AVG:  new_d = cur_d_n * cur_std + tgt_avg
-                    elif fdc_methd == FrameDeltaCorrection.STD:  new_d = cur_d_n * tgt_std + cur_avg
-                    elif fdc_methd == FrameDeltaCorrection.NORM: new_d = cur_d_n * tgt_std + tgt_avg
+                        if   fdc_methd == FrameDeltaCorrection.AVG:  new_d = cur_d_n * cur_std + tgt_avg
+                        elif fdc_methd == FrameDeltaCorrection.STD:  new_d = cur_d_n * tgt_std + cur_avg
+                        elif fdc_methd == FrameDeltaCorrection.NORM: new_d = cur_d_n * tgt_std + tgt_avg
 
-                    im = (last_frame + new_d).clip(0.0, 1.0)
-                    param.image = Image.fromarray((im * np.iinfo(np.uint8).max).astype(np.uint8))
+                        this_frame = last_frame + new_d
 
-                    last_frame = im
+                    # suppress subtle pixel change by quadratic-rescale
+                    if fds_pixel > 0.0:
+                        cur_d = this_frame - last_frame     # [-1.0, 1.0]
+                        cur_d_s = np.sign(cur_d)
+                        mask = np.abs(cur_d) > fds_pixel
+                        new_d = mask * cur_d + ~mask * cur_d**2 * cur_d_s
+
+                        this_frame = last_frame + new_d
+
+                    new_frame = this_frame.clip(0.0, 1.0)
+                    param.image = Image.fromarray((new_frame * np.iinfo(np.uint8).max).astype(np.uint8))
+
+                    if 'debug':
+                        dd = np.abs(new_frame - last_frame)
+                        print('>> fds_pixel dd.max():', dd.max())
+                        print('>> fds_pixel dd.mean():', dd.mean())
+
+                    last_frame = new_frame
                 else:
                     last_frame = img_to_im(param.image)
 
-        on_before_image_saved(image_save_hijack)
+        try:
+            on_before_image_saved(image_save_hijack)
 
-        n_frames = len(init_fns)
-        state.job_count = n_frames
-        for i in tqdm(range(n_frames)):
-            if state.interrupted: break
+            n_frames = len(init_fns)
+            state.job_count = n_frames
+            for i in tqdm(range(n_frames)):
+                if state.interrupted: break
 
-            state.job = f'{i}/{n_frames}'
-            state.job_no = i + 1
-            iframe = i
+                state.job = f'{i}/{n_frames}'
+                state.job_no = i + 1
+                iframe = i
 
-            p.init_images = get_init(i)
-            p.image_mask  = get_mask(i)
+                p.init_images = get_init(i)
+                p.image_mask  = get_mask(i)
 
-            proc = process_images_inner(p)
-            if initial_info is None: initial_info = proc.info
-            images.extend(proc.images)
+                proc = process_images_inner(p)
+                if initial_info is None: initial_info = proc.info
+                images.extend(proc.images)
 
-        remove_callbacks_for_function(image_save_hijack)
+                self.last_latent = None
+
+        finally:
+            self.last_latent = None
+
+            remove_callbacks_for_function(image_save_hijack)
 
         return images, initial_info
