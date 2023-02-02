@@ -7,10 +7,10 @@
 
 from traceback import print_exc
 
-MODEL_HW  = 512
-HW_SETP = 32
-HW_MIN = 384
-HW_MAX = 1024
+HW_MIN  = 360
+HW_MAX  = 720
+HW_STEP = 8
+TOP_K   = 15 
 
 print('Input video resolution width and height, e.g.:')
 print('   1024 768 ')
@@ -20,7 +20,7 @@ print()
 
 try:
   while True:
-    s = input('>> Video resolution (q to quit): ')
+    s = input('>> query (q to quit): ')
     if s in ['q', 'quit']: break
 
     try:
@@ -29,15 +29,17 @@ try:
       else:
         w, h = [int(x.strip()) for x in s.split(' ')]
       r = w / h
+      
+      print(f'<< origianl aspect ratio: {r}')
 
       dr_wh = []
-      for W in range(HW_MIN, HW_MAX+1, HW_SETP):
-        for H in range(HW_MIN, HW_MAX+1, HW_SETP):
-          dr_wh.append((abs(W / H - r), (W, H)))
+      for W in range(HW_MIN, HW_MAX+1, HW_STEP):
+        for H in range(HW_MIN, HW_MAX+1, HW_STEP):
+          dr_wh.append((abs(W / H - r), W / H, (W, H)))
       dr_wh.sort()
 
-      for _, (w, h) in dr_wh[:5]:
-        print(f'w: {w}, h: {h}')
+      for _, r, (w, h) in dr_wh[:TOP_K]:
+        print(f'   w: {w}, h: {h}; AR: {r}')
 
     except:
       print('<< bad input format')

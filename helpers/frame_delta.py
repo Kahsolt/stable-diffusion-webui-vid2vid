@@ -48,7 +48,11 @@ def compare_frame_delta(dp1:Path, dp2:Path):
 
   fps1 = list(dp1.iterdir())
   fps2 = list(dp2.iterdir())
-  assert len(fps1) == len(fps2)
+  if len(fps1) != len(fps2):
+    print('Warn: file count mismatch!')
+    minlen = min(len(fps1), len(fps2))
+    fps1 = fps1[:minlen]
+    fps2 = fps2[:minlen]
 
   for fp1, fp2 in zip(fps1, fps2):
     im1, im2 = get_img(fp1).astype(np.float32), get_img(fp2).astype(np.float32)   # [0, 1]
