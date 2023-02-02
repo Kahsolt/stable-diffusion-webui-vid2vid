@@ -22,11 +22,11 @@ Although it sounds like the old joke that an English wizard turns a walnut into 
 
 Example: 
 
-| original | rendered |
-| :-: | :-: |
-| ![original](img/original.gif) | ![rendered](img/rendered.gif) |
+| vid2vid | original | img2img |
+| :-: | :-: | :-: |
+| ![vid2vid](img/v2v.gif | ![original](img/original.gif) | ![img2img](img/i2i.gif) |
 
-demp source:
+demo video original source:
 
   - title:【LEN/MMD】和风模组面前耍大刀【青月/蓝铁/妖狐】
   - url: [https://www.bilibili.com/video/BV1Vd4y1L7Q9](https://www.bilibili.com/video/BV1Vd4y1L7Q9)
@@ -63,24 +63,36 @@ Export fmt: mp4
 ```
 
 
-
-
 ### How it works?
 
 ![How it works](img/How%20it%20works.png)
 
-⚪ about override sigma schedule
+⚪ Sigma schedule (overrided)
 
-**sigma schedule** controls how much noise is added to the latent image at each sampling step, so that the denoiser can do work against it -- it is a fight. 😃  
-more noise will allow the denoiser to repaint the canvas, while less noise will result fuzzy-glasss-like image
+**Sigma schedule** controls the magnitude to denoise a latent image at each sampling step, and it should be an annealing process so that the final painting converges to some local optimal.  
+This extension allows you to override the default sigma scheduling, now you can fine-tune the annealing process on your own.  
 
-- init noise weight: multipilier to the noise of init ref-image
-- sigma method: various schdulers to create a serial of numbers decreasing in value
-  - we recommend to try `linear` and `exponential` first to
-
-=> see different schedule methods using helper script [helpers/sigma_schedule.py](helpers/sigma_schedule.py):
+For sigmas tuning reference, see different schedule methods using the helper script [helpers/sigma_schedule.py](helpers/sigma_schedule.py):
 
 ![sigma_schedule](img/sigma_schedule.png)
+
+Notes:
+
+  - initial real sigma numbers for img2img (~1.0) are typically smaller than which used in txt2img (~10.0), not letting the denoiser to change image content toooo much
+  - in old fashion, we would take a long `steps >= 50` with low `denoising strength ~= 0.5` to truncate the taling part of the whole sigma sequence given by the scheduler, in order to make the annealing steady
+  - now with an overrided low initial sigma `sigma max ~= 1.0`, you can take shorter `steps` and higher `denoising strength`
+  - for different schedulers, try `linear` and `exponential` first to understand the behaviour! 😀
+  - before the real work, the `single img2img (for debug)` mode in tab `3: Successive Img2Img` is your playground to tune things~
+
+⚪ Frame delta correction
+
+The original batch img2img might still not be successive or stable in re-painted details even with fine-tuned sigma schedule.  
+We apply **frame delta correction & mask** using frame delta info:  
+
+- match the delta for generated frames with the originals in statistics
+- use the delta as a kind of motion mask (rather depth mask)
+
+![frame_delta](img/frame_delta.png)
 
 
 ### Installation
@@ -105,7 +117,7 @@ more noise will allow the denoiser to repaint the canvas, while less noise will 
 
 ### Options
 
-ℹ This script is only applicable in `Img2Img` tab :)  
+ℹ This script is only applicable in `img2img` tab :)  
 ⚠ some tasks will take a real long time, DO NOT click the button twice, juts see output on console!!
 
 - cache_folder: (string), path to the folder for caching all intermediate data

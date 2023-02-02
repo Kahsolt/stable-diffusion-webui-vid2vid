@@ -6,7 +6,7 @@ import shutil
 from re import compile as Regex
 from pathlib import Path
 from subprocess import Popen
-from PIL import Image
+from PIL import Image, ImageFilter
 from PIL.Image import Image as PILImage
 from enum import Enum
 from collections import Counter
@@ -100,9 +100,15 @@ class NoiseSched(Enum):
 
 class FrameDeltaCorrection(Enum):
     NONE = '(none)'
-    AVG  = 'avg'
-    STD  = 'std'
-    NORM = 'avg & std'
+    AVG  = 'shift mean'
+    STD  = 'shift std'
+    NORM = 'shift mean & std'
+    CLIP = 'clip min & miax'
+
+class SpatialMask(Enum):
+    NONE  = '(none)'
+    DELTA = 'frame delta'
+    DEPTH = 'depth map'
 
 def get_resr_model_names() -> List[str]:
     return sorted({fn.stem for fn in (RESR_PATH / 'models').iterdir()})
@@ -146,14 +152,13 @@ if 'global consts':
     LABEL_SIGMA_MIN         = 'Sigma min'
     LABEL_SIGMA_MAX         = 'Sigma max'
     LABEL_INIT_NOISE_W      = 'Init noise weight'
-    LABEL_FDS_PIXEL         = 'Frame delta suppression'
     LABEL_FDC_METH          = 'Frame delta correction'
-    LABEL_MASK_LOWCUT       = 'Depth mask low-cut'
+    LABEL_MASK_MOTION_LC    = 'Motion mask low-cut'
+    LABEL_MASK_DEPTH_LC     = 'Depth mask low-cut'
     LABEL_RESR_MODEL        = 'Real-ESRGAN model'
     LABEL_RIFE_MODEL        = 'RIFE model'
     LABEL_RIFE_RATIO        = 'Interpolation ratio'
     LABEL_EXPORT_FMT        = 'Export format'
-    LABEL_EXPORT_FPS        = 'Export FPS'
     LABEL_FRAME_SRC         = 'Frame source'
     LABEL_ALLOW_OVERWRITE   = 'Allow overwrite cache'
     LABEL_PROCESS_AUDIO     = 'Process audio'
@@ -163,6 +168,7 @@ if 'global consts':
     CHOICES_VIDEO_FMT       = [x.value for x in VideoFormat]
     CHOICES_SIGMA_METH      = [x.value for x in NoiseSched]
     CHOICES_FDC_METH        = [x.value for x in FrameDeltaCorrection]
+    CHOICES_SPATIAL_MASK    = [x.value for x in SpatialMask]
     CHOICES_IMG2IMG_MODE    = [x.value for x in Img2ImgMode]
     CHOICES_RESR_MODEL      = get_resr_model_names()
     CHOICES_RIFE_MODEL      = get_rife_model_names()
@@ -189,17 +195,18 @@ if 'global consts':
     DEFAULT_SIGMA_METH      = __(LABEL_SIGMA_METH, NoiseSched.EXP.value)
     DEFAULT_SIGMA_MAX       = __(LABEL_SIGMA_MAX, 1.2)
     DEFAULT_SIGMA_MIN       = __(LABEL_SIGMA_MIN, 0.1)
-    DEFAULT_FDS_PIXEL       = __(LABEL_FDS_PIXEL, 4)
     DEFAULT_FDC_METH        = __(LABEL_FDC_METH, FrameDeltaCorrection.NORM.value)
-    DEFAULT_MASK_LOWCUT     = __(LABEL_MASK_LOWCUT, -1)
+    DEFAULT_MASK_MOTION_LC  = __(LABEL_MASK_MOTION_LC, 4)
+    DEFAULT_MASK_DEPTH_LC   = __(LABEL_MASK_DEPTH_LC, -1)
     DEFAULT_RESR_MODEL      = __(LABEL_RESR_MODEL, 'realesr-animevideov3-x2')
     DEFAULT_RIFE_MODEL      = __(LABEL_RIFE_MODEL, 'rife-v4')
     DEFAULT_RIFE_RATIO      = __(LABEL_RIFE_RATIO, 2.0)
     DEFAULT_FRAME_SRC       = __(LABEL_FRAME_SRC, WS_RIFE)
     DEFAULT_EXPORT_FMT      = __(LABEL_EXPORT_FMT, VideoFormat.MP4.value)
-    DEFAULT_EXPORT_FPS      = __(LABEL_EXPORT_FPS, 24)
     DEFAULT_ALLOW_OVERWRITE = __(LABEL_ALLOW_OVERWRITE, True)
     DEFAULT_PROCESS_AUDIO   = __(LABEL_PROCESS_AUDIO, False)
+
+    MASK_MOTION_EXPAND_K = 7
 
     MATERIAL_HELP_HTML = '''
 <div>
@@ -226,6 +233,19 @@ def get_folder_file_count(dp:Union[Path, str]) -> int:
 
 def get_file_size(fp:Union[Path, str]) -> float:
     return os.path.getsize(fp) / 2**20
+
+def img_to_im(img: PILImage) -> NDArray[np.float32]:
+    assert isinstance(img, PILImage)
+
+    img = img.convert('RGB')
+    return np.asarray(img, dtype=np.float32) / 255.0    # [0.0, 1.0]
+
+def im_to_img(im: NDArray[np.float32]) -> PILImage:
+    assert 0 <= im.min() and im.max() <= 1.0
+    assert isinstance(im, np.ndarray)
+    assert im.dtype in [np.float16, np.float32, np.float64, np.half, np.single, np.double]
+
+    return Image.fromarray((im * np.iinfo(np.uint8).max).astype(np.uint8))
 
 
 # global runtime vars
@@ -443,9 +463,9 @@ def _btn_frame_delta() -> TaskResponse:
     out_dp.mkdir()
 
     try:
-        def get_img(fp: Path) -> NDArray[np.float16]:
+        def get_img(fp: Path) -> NDArray[np.float32]:
             img = Image.open(fp).convert('RGB')
-            return np.asarray(img, dtype=np.float16) / 255.0  # [H, W, C]
+            return np.asarray(img, dtype=np.float32) / 255.0  # [H, W, C]
 
         fps = list(in_dp.iterdir())
         im0, im1 = None, get_img(fps[0])
@@ -636,7 +656,7 @@ def _btn_rife(rife_model:str, rife_ratio:float, extract_fmt:str) -> TaskResponse
         return RetCode.ERROR, e
 
 @task
-def _btn_ffmpeg_compose(export_fmt:str, export_fps:float, extract_fmt:str, frame_src:str) -> TaskResponse:
+def _btn_ffmpeg_compose(export_fmt:str, frame_src:str, extract_fmt:str, extract_fps:float) -> TaskResponse:
     in_img = workspace / frame_src
     if not in_img.exists():
         return RetCode.ERROR, f'src folder not found: {in_img}'
@@ -652,9 +672,18 @@ def _btn_ffmpeg_compose(export_fmt:str, export_fps:float, extract_fmt:str, frame
             return RetCode.WARN, 'task "render" ignored due to cache exists'
         out_vid.unlink()
 
+    n_frames = get_folder_file_count(in_img)
+    real_fps = None
+    for stream in ffprob_info['streams']:
+        if stream['codec_type'] == 'video':
+            real_fps = n_frames / float(stream['duration'])
+    if real_fps is None:
+        print(f'cannot decide real fps, defaults to extract_fps: {extract_fps}')
+        real_fps = extract_fps
+
     fn_ext = 'png' if frame_src in [WS_DFRAME, WS_MASK, WS_IMG2IMG, WS_RESR] else extract_fmt
     try:
-        cmd = f'"{FFMPEG_BIN}"{opts} -framerate {export_fps} -i "{in_img}\\%05d.{fn_ext}" -crf 20 -c:v libx264 -pix_fmt yuv420p "{out_vid}"'
+        cmd = f'"{FFMPEG_BIN}"{opts} -framerate {real_fps} -i "{in_img}\\%05d.{fn_ext}" -crf 20 -c:v libx264 -pix_fmt yuv420p "{out_vid}"'
         print(f'>> exec: {cmd}')
         Popen(cmd, shell=True, text=True, encoding='utf-8').wait()
 
@@ -764,10 +793,10 @@ class Script(Script):
 
                 sigma_meth.change(fn=lambda x: gr_show(NoiseSched(x) != NoiseSched.DEFAULT), inputs=sigma_meth, outputs=tab_sigma_sched, show_progress=False)
 
-                with gr.Row().style(equal_height=True) as tab_param_frame:
-                    fds_pixel   = gr.Slider  (label=LABEL_FDS_PIXEL,   value=lambda: DEFAULT_FDS_PIXEL,   minimum=0,  maximum=8, step=1)
-                    fdc_methd   = gr.Dropdown(label=LABEL_FDC_METH,    value=lambda: DEFAULT_FDC_METH,    choices=CHOICES_FDC_METH)
-                    mask_lowcut = gr.Slider  (label=LABEL_MASK_LOWCUT, value=lambda: DEFAULT_MASK_LOWCUT, minimum=-1, maximum=255, step=1)
+                with gr.Row(variant='compact').style(equal_height=True) as tab_param_frame:
+                    fdc_methd          = gr.Dropdown(label=LABEL_FDC_METH,       value=lambda: DEFAULT_FDC_METH,       choices=CHOICES_FDC_METH)
+                    mask_motion_lowcut = gr.Slider  (label=LABEL_MASK_MOTION_LC, value=lambda: DEFAULT_MASK_MOTION_LC, minimum=0,  maximum=16, step=1)
+                    mask_depth_lowcut  = gr.Slider  (label=LABEL_MASK_DEPTH_LC,  value=lambda: DEFAULT_MASK_DEPTH_LC,  minimum=-1, maximum=255, step=1)
 
                 img2img_mode.change(fn=lambda x: gr_show(Img2ImgMode(x) == Img2ImgMode.BATCH), inputs=img2img_mode, outputs=tab_param_frame, show_progress=False)
 
@@ -790,11 +819,10 @@ class Script(Script):
             with gr.Tab('5: Render'):
                 with gr.Row().style(equal_height=True):
                     export_fmt = gr.Dropdown(label=LABEL_EXPORT_FMT, value=lambda: DEFAULT_EXPORT_FMT, choices=CHOICES_VIDEO_FMT)
-                    export_fps = gr.Slider  (label=LABEL_EXPORT_FPS, value=lambda: DEFAULT_EXPORT_FPS, minimum=12, maximum=60, step=0.1)
                     frame_src  = gr.Dropdown(label=LABEL_FRAME_SRC,  value=lambda: DEFAULT_FRAME_SRC,  choices=CHOICES_FRAME_SRC)
 
                     btn_ffmpeg_compose = gr.Button('Render!')
-                    btn_ffmpeg_compose.click(fn=_btn_ffmpeg_compose, inputs=[export_fmt, export_fps, extract_fmt, frame_src], outputs=status_info, show_progress=False)
+                    btn_ffmpeg_compose.click(fn=_btn_ffmpeg_compose, inputs=[export_fmt, frame_src, extract_fmt, extract_fps], outputs=status_info, show_progress=False)
 
                 gr.HTML(html.escape(r'=> expected to get synth-*.mp4'))
 
@@ -812,26 +840,28 @@ class Script(Script):
             img2img_mode, 
             init_noise_w, sigma_meth, 
             steps, denoise_w, sigma_min, sigma_max, 
-            fds_pixel, fdc_methd, mask_lowcut, 
+            fdc_methd, mask_motion_lowcut, mask_depth_lowcut, 
         ]
 
     def run(self, p:StableDiffusionProcessingImg2Img, 
             img2img_mode:str, 
             init_noise_w:float, sigma_meth:str, 
             steps:int, denoise_w:float, sigma_min:float, sigma_max:float, 
-            fds_pixel:int, fdc_methd:str, mask_lowcut:int, 
+            fdc_methd:str, mask_motion_lowcut:int, mask_depth_lowcut:int, 
         ):
 
+        img2img_mode: Img2ImgMode = Img2ImgMode(img2img_mode)
         sigma_override: bool = NoiseSched(sigma_meth) != NoiseSched.DEFAULT
+        fdc_methd: FrameDeltaCorrection = FrameDeltaCorrection(fdc_methd)
+
         if sigma_override:
             if sigma_max < sigma_min:
                 return Processed(p, [], p.seed, 'error sigma_max < sigma_min!')
 
-        out_dp = p.outpath_samples
-        img2img_mode: Img2ImgMode = Img2ImgMode(img2img_mode)
         if img2img_mode == Img2ImgMode.BATCH:
-            use_mask = mask_lowcut >= 0
-            use_fdc = FrameDeltaCorrection(fdc_methd) != FrameDeltaCorrection.NONE
+            use_fdc = fdc_methd != FrameDeltaCorrection.NONE
+            use_mask_depth  = mask_depth_lowcut >= 0
+            use_mask_motion = mask_motion_lowcut > 0
 
             if workspace is None:
                 return Processed(p, [], p.seed, 'no current workspace opened!')
@@ -852,32 +882,38 @@ class Script(Script):
                 n_inits = get_folder_file_count(frames_dp)
 
                 delta_dp = workspace / WS_DFRAME
-                if use_fdc:
+                if use_fdc or use_mask_motion:
                     if not delta_dp.exists():
                         return Processed(p, [], p.seed, f'framedelta folder not found: {delta_dp}')
                     n_delta = get_folder_file_count(delta_dp)
                     if n_delta != n_inits - 1:
                         return Processed(p, [], p.seed, f'number mismatch for n_delta ({n_delta}) != n_frames ({n_inits}) - 1')
 
-                mask_dp = workspace / WS_MASK
-                if use_mask:
-                    if not mask_dp.exists():
-                        return Processed(p, [], p.seed, f'mask folder not found: {mask_dp}')
-                    n_masks = get_folder_file_count(mask_dp)
+                depth_dp = workspace / WS_MASK
+                if use_mask_depth:
+                    if not depth_dp.exists():
+                        return Processed(p, [], p.seed, f'mask folder not found: {depth_dp}')
+                    n_masks = get_folder_file_count(depth_dp)
                     if n_masks != n_inits:
                         return Processed(p, [], p.seed, f'number mismatch for n_masks ({n_masks}) != n_frames ({n_inits})')
 
-            self.init_dp     = frames_dp
-            self.init_fns    = os.listdir(frames_dp)
-            self.delta_dp    = delta_dp
-            self.mask_dp     = mask_dp if use_mask else None
-            self.mask_lowcut = mask_lowcut
-            self.fdc_methd   = FrameDeltaCorrection(fdc_methd)
-            self.fds_pixel   = fds_pixel / 255.0
+            self.init_dp         = frames_dp
+
+            self.depth_dp        = depth_dp
+            self.use_mask_depth  = use_mask_depth
+            self.depth_lowcut    = mask_depth_lowcut
+
+            self.delta_dp        = delta_dp
+            self.use_fdc         = use_fdc
+            self.fdc_methd       = fdc_methd
+            self.use_mask_motion = use_mask_motion
+            self.motion_lowcut   = mask_motion_lowcut
         else:
             if workspace is not None:
                 out_dp = workspace / WS_IMG2IMG_DEBUG
                 out_dp.mkdir(exist_ok=True)
+            else:
+                out_dp = p.outpath_samples
 
         if sigma_override:
             from k_diffusion.sampling import get_sigmas_karras, get_sigmas_exponential, get_sigmas_polyexponential, get_sigmas_vp
@@ -911,7 +947,7 @@ class Script(Script):
             p.initial_noise_multiplier = init_noise_w
 
         # hijack .sample() method
-        setattr(p, 'sample', lambda *args, **kwargs: StableDiffusionProcessingImg2Img_sample(p, *args, **kwargs))
+        #setattr(p, 'sample', lambda *args, **kwargs: StableDiffusionProcessingImg2Img_sample(p, *args, **kwargs))
 
         def cfg_denoiser_hijack(param:CFGDenoiserParams):
             print(f'>> [{param.sampling_step+1}/{param.total_sampling_steps}] sigma: {param.sigma[-1].item()}')
@@ -935,13 +971,16 @@ class Script(Script):
         return proc.images, proc.info
 
     def run_batch_img2img(self, p: StableDiffusionProcessingImg2Img) -> Tuple[List[PILImage], str]:
-        init_dp     = self.init_dp
-        init_fns    = self.init_fns
-        delta_dp    = self.delta_dp
-        mask_dp     = self.mask_dp
-        mask_lowcut = self.mask_lowcut
-        fdc_methd   = self.fdc_methd
-        fds_pixel   = self.fds_pixel
+        init_dp         = self.init_dp
+        delta_dp        = self.delta_dp
+        depth_dp        = self.depth_dp
+        use_fdc         = self.use_fdc
+        fdc_methd       = self.fdc_methd
+        use_mask_motion = self.use_mask_motion
+        motion_lowcut   = self.motion_lowcut
+        use_mask_depth  = self.use_mask_depth
+        depth_lowcut    = self.depth_lowcut
+        init_fns        = os.listdir(init_dp)
 
         initial_info: str = None
         images: List[PILImage] = []
@@ -949,30 +988,42 @@ class Script(Script):
         def get_init(idx:int) -> List[PILImage]:
             return [Image.open(init_dp / init_fns[idx]).convert('RGB')]
 
-        def get_dframe(idx:int, w:int, h:int) -> NDArray[np.float16]:
-            img = Image.open(delta_dp / Path(init_fns[idx]).with_suffix('.png'))
-            img = resize_image(p.resize_mode, img, w, h)
-            im = np.asarray(img, dtype=np.float16) / 255.0  # [0, 1]
-            im = im * 2 - 1                                 # [-1, 1]
-            return im
-
-        def get_mask(idx:int) -> PILImage:
-            if not mask_dp: return None
-
-            def renorm_mask(im:NDArray[np.uint8], thresh:int) -> NDArray[np.float16]:
+        def get_depth_mask(idx:int, lowcut:int=0) -> PILImage:
+            def renorm_mask(im:NDArray[np.uint8]) -> NDArray[np.uint8]:
                 # map under thresh to 0, renorm above thresh to [0.0, 1.0]
-                mask_v = im >= thresh
+                mask_v = im >= lowcut
                 im_v = im * mask_v
                 vmin, vmax = im_v.min(), im_v.max()
-                im = (im.astype(np.float16) - vmin) / (vmax - vmin)
+                im = (im.astype(np.float32) - vmin) / (vmax - vmin)
                 im *= mask_v
                 im = (im * np.iinfo(np.uint8).max).astype(np.uint8)
                 return im
 
-            img = Image.open(mask_dp / Path(init_fns[idx]).with_suffix('.png')).convert('L')
+            img = Image.open(depth_dp / Path(init_fns[idx]).with_suffix('.png')).convert('L')
             im = np.asarray(img, dtype=np.uint8)
-            im = renorm_mask(im, mask_lowcut)
+            im = renorm_mask(im)
             return Image.fromarray(im)
+
+        def get_delta(idx:int, w:int, h:int) -> NDArray[np.float32]:
+            img = Image.open(delta_dp / Path(init_fns[idx]).with_suffix('.png'))
+            img = resize_image(p.resize_mode, img, w, h)
+            im = np.asarray(img, dtype=np.float32) / 255.0  # [0.0, 1.0], non-normalized
+            im = im * 2 - 1                                 # [-1.0, 1.0]
+            return im
+
+        def get_motion_mask(idx:int, w:int, h:int, lowcut:int=0) -> NDArray[np.float32]:
+            img = Image.open(delta_dp / Path(init_fns[idx]).with_suffix('.png')).convert('L')
+            img = resize_image(p.resize_mode, img, w, h)
+            im = np.asarray(img, dtype=np.float32) / 255.0  # [0.0, 1.0], non-normalized
+            im = im * 2 - 1                                 # [-1.0, 1.0]
+            im = np.abs(im)                                 # [0.0, 1.0], get the magnitude (maxval may < 1.0)
+            im /= im.max()                                  # re-norm to [0.0, 1.0]
+            alpha = -np.log(2) / np.log(1 - lowcut / 255)   # 放缩使得像素差值 thresh 的 mask 强度为 0.5
+            im = 1 - (1 - im) ** (1 + alpha)                # concave function on [0.0, 1.0]
+            img = im_to_img(im)
+            img = img.filter(ImageFilter.MaxFilter(size=MASK_MOTION_EXPAND_K))   # 扩散选区
+            im = img_to_im(img)
+            return im
 
         last_frame:NDArray[np.float32] = None
         iframe = 0
@@ -987,55 +1038,68 @@ class Script(Script):
             # force RGB mode, RIFE not work on RGBA
             param.image = param.image.convert('RGB')
 
-            if fdc_methd != FrameDeltaCorrection.NONE or fds_pixel > 0.0:
+            if use_fdc or use_mask_motion:
                 nonlocal last_frame, iframe
-
-                def img_to_im(img: PILImage) -> NDArray[np.float32]:
-                    return np.asarray(img, dtype=np.float32) / 255.0
 
                 if last_frame is not None:
                     this_frame = img_to_im(param.image)     # [0.0, 1.0]
+                    H, W, C = this_frame.shape
 
-                    # frame-delta consistency correction
-                    if fdc_methd != FrameDeltaCorrection.NONE:
-                        cur_d = this_frame - last_frame         # [-1.0, 1.0]
-                        cur_d_t = torch.from_numpy(cur_d)
-                        cur_avg = cur_d_t.mean(axis=[0, 1], keepdims=True).numpy()
-                        cur_std = cur_d_t.std (axis=[0, 1], keepdims=True).numpy()
-                        if cur_std.min() <= np.finfo(np.float32).min: cur_std = 1e-3
-                        cur_d_n = (cur_d - cur_avg) / cur_std
-
-                        H, W, C = this_frame.shape
-                        tgt_d = get_dframe(iframe, W, H)        # [-1.0, 1.0]
-                        tgt_d_t = torch.from_numpy(tgt_d)
-                        tgt_avg = tgt_d_t.mean(axis=[0, 1], keepdims=True).numpy()
-                        tgt_std = tgt_d_t.std (axis=[0, 1], keepdims=True).numpy()
-                        if tgt_std.min() <= np.finfo(np.float32).min: tgt_std = 1e-3
-
-                        if   fdc_methd == FrameDeltaCorrection.AVG:  new_d = cur_d_n * cur_std + tgt_avg
-                        elif fdc_methd == FrameDeltaCorrection.STD:  new_d = cur_d_n * tgt_std + cur_avg
-                        elif fdc_methd == FrameDeltaCorrection.NORM: new_d = cur_d_n * tgt_std + tgt_avg
-
-                        this_frame = last_frame + new_d
-
-                    # suppress subtle pixel change by quadratic-rescale
-                    if fds_pixel > 0.0:
+                    if use_fdc:
                         cur_d = this_frame - last_frame     # [-1.0, 1.0]
-                        cur_d_s = np.sign(cur_d)
-                        mask = np.abs(cur_d) > fds_pixel
-                        new_d = mask * cur_d + ~mask * cur_d**2 * cur_d_s
+                        tgt_d = get_delta(iframe, W, H)     # [-1.0, 1.0]
+
+                        if fdc_methd == FrameDeltaCorrection.CLIP:
+                            new_d = cur_d.clip(tgt_d.min(), tgt_d.max())
+                        else:
+                            cur_d_t = torch.from_numpy(cur_d)
+                            cur_avg = cur_d_t.mean(axis=[0, 1], keepdims=True).numpy()
+                            cur_std = cur_d_t.std (axis=[0, 1], keepdims=True).numpy()
+                            if cur_std.min() <= np.finfo(np.float32).min: cur_std = 1e-3
+                            cur_d_n = (cur_d - cur_avg) / cur_std
+
+                            tgt_d_t = torch.from_numpy(tgt_d)
+                            tgt_avg = tgt_d_t.mean(axis=[0, 1], keepdims=True).numpy()
+                            tgt_std = tgt_d_t.std (axis=[0, 1], keepdims=True).numpy()
+                            if tgt_std.min() <= np.finfo(np.float32).min: tgt_std = 1e-3
+
+                            if   fdc_methd == FrameDeltaCorrection.AVG:  new_d = cur_d_n * cur_std + tgt_avg
+                            elif fdc_methd == FrameDeltaCorrection.STD:  new_d = cur_d_n * tgt_std + cur_avg
+                            elif fdc_methd == FrameDeltaCorrection.NORM: new_d = cur_d_n * tgt_std + tgt_avg
 
                         this_frame = last_frame + new_d
 
-                    new_frame = this_frame.clip(0.0, 1.0)
-                    param.image = Image.fromarray((new_frame * np.iinfo(np.uint8).max).astype(np.uint8))
+                        if 'debug':
+                            dd = np.abs(this_frame - last_frame)
+                            print('>> fds_pixel max:', dd.max(), 'mean:', dd.mean())
 
-                    if 'debug':
-                        dd = np.abs(new_frame - last_frame)
-                        print('>> fds_pixel dd.max():', dd.max())
-                        print('>> fds_pixel dd.mean():', dd.mean())
+                    if use_mask_motion:
+                        cur_d = this_frame - last_frame     # [-1.0, 1.0]
 
-                    last_frame = new_frame
+                        mask = get_motion_mask(iframe, W, H, motion_lowcut)    # [0.0, 1.0]
+                        new_d = cur_d * mask
+
+                        this_frame = last_frame + new_d
+
+                        if not 'debug':
+                            import matplotlib.pyplot as plt
+
+                            dd = new_d - cur_d
+                            plt.subplot(221) ; plt.imshow((cur_d + 1) / 2) ; plt.axis('off')
+                            plt.subplot(222) ; plt.imshow(mask)            ; plt.axis('off')
+                            plt.subplot(223) ; plt.imshow((new_d + 1) / 2) ; plt.axis('off')
+                            plt.subplot(224) ; plt.imshow((dd    + 1) / 2) ; plt.axis('off')
+                            plt.tight_layout()
+                            plt.show()
+
+                        if 'debug':
+                            dd = np.abs(this_frame - last_frame)
+                            print('>> mask_motion max:', dd.max(), 'mean:', dd.mean())
+
+                    this_frame = this_frame.clip(0.0, 1.0)
+                    param.image = im_to_img(this_frame)
+
+                    last_frame = this_frame
                 else:
                     last_frame = img_to_im(param.image)
 
@@ -1052,7 +1116,7 @@ class Script(Script):
                 iframe = i
 
                 p.init_images = get_init(i)
-                p.image_mask  = get_mask(i)
+                p.image_mask  = get_depth_mask(i, depth_lowcut) if use_mask_depth else None
 
                 proc = process_images_inner(p)
                 if initial_info is None: initial_info = proc.info
