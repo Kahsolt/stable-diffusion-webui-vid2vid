@@ -19,12 +19,15 @@
 Convert a video to an AI generated video through a pipeline of model neural models: Stable-Diffusion, DeepDanbooru, Midas, Real-ESRGAN, RIFE, etc.  
 Although it sounds like the old joke that an English wizard turns a walnut into another walnut by reciting a tongue-twisting spell. 🤣  
 
+ℹ This script is only applicable in `img2img` tab :)  
+⚠ some tasks will take a real long time, **DO NOT** click the button twice, juts see progress bar on console!!
+
 
 Example: 
 
 | vid2vid | original | img2img |
 | :-: | :-: | :-: |
-| ![vid2vid](img/v2v.gif | ![original](img/original.gif) | ![img2img](img/i2i.gif) |
+| ![vid2vid](img/v2v.gif) | ![original](img/original.gif) | ![img2img](img/i2i.gif) |
 
 demo video original source:
 
@@ -47,18 +50,19 @@ CFG Scale: 7
 Seed: 114514
 
 Extracted FPS: 12
-Extracted fmt: jpg
+Extracted fmt: png
 Sampling steps: 20
-Denoising strength: 0.85
+Denoising strength: 0.75
 Init noise weight: 0.95
 Sigma method: exponential
-Sigma sigma max: 1.2
 Sigma sigma min: 0.1
+Sigma sigma max: 1.2
 Frame delta correction: avg & std
-Depth mask lowcut: -1
+Motion mask lowcut: 4
+Depth mask lowcut: 32
 RESR model: animevideov3-x2
 RIFE model: rife-v4
-Interp/export FPS: 24
+Interpolation ratio: 2
 Export fmt: mp4
 ```
 
@@ -113,16 +117,6 @@ We apply **frame delta correction & mask** using frame delta info:
   - `cd <SD>\repositories`
   - `git clone https://github.com/isl-org/MiDaS.git midas`
   - download `https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21_small-70d6b9c8.pt` put under `<SD>\models\midas\`
-
-
-### Options
-
-ℹ This script is only applicable in `img2img` tab :)  
-⚠ some tasks will take a real long time, DO NOT click the button twice, juts see output on console!!
-
-- cache_folder: (string), path to the folder for caching all intermediate data
-- video_file: (file), path to the video file to convert
-
 
 
 #### Acknowledgement
