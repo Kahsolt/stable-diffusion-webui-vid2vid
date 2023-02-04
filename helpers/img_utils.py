@@ -147,14 +147,16 @@ def im_mask_highext(im:npimg, size:int=7) -> npimg:
   return img_to_im(img)
 
 @valid_delta
-def im_delta_to_motion(im:npimg, thresh:float=0.0, expand:int=7, px:int=12) -> npimg:
+def im_delta_to_motion(im:npimg, thresh:float=0.0, expand:int=7, px:int=4) -> npimg:
   assert type(thresh) == float
 
   im = np.abs(im)                     # [0.0, 1.0], get the magnitude (maxval may < 1.0)
-  im /= im.max()                      # re-norm to [0.0, 1.0]
+  im = im_minmax_norm(im)             # strech to fill [0.0, 1.0]
   F = -np.log2(1 - px/255) ** -1      # 使得像素差值 px 的 mask 强度为 0.5
   alpha = (1 - thresh) * F            # 颠倒一下数值映射顺序
   im = 1 - (1 - im) ** (1 + alpha)    # some concave function on [0.0, 1.0], boost up values
+  if not 'debug':
+    print('mask.avg:', im.mean())
   return im_mask_highext(im, expand)
 
 

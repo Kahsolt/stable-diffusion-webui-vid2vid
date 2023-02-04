@@ -1002,7 +1002,8 @@ class Script(Script):
             fp = Path(param.filename)
             sn = int(fp.stem[:5])
             if sn <= 0: sn += 1
-            param.filename = str(fp.parent / f'{sn:05d}' + fp.suffix)
+            fn = f'{sn:05d}' + fp.suffix
+            param.filename = str(fp.parent / fn)
 
             # force RGB mode, RIFE not work on RGBA
             param.image = param.image.convert('RGB')
