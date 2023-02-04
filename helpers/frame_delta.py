@@ -6,26 +6,11 @@
 
 import sys
 from pathlib import Path
-from PIL import Image
-
-import numpy as np
-from numpy.typing import NDArray
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
+from img_utils import *
 
-def get_img(fp: Path) -> NDArray[np.float16]:
-  img = Image.open(fp).convert('RGB')
-  im = np.asarray(img, dtype=np.float16) / 255.0  # [H, W, C]
-  return im
-
-def get_chan_wise_norm_img(fp: Path) -> NDArray[np.float16]:
-  im = get_img(fp)
-  std = im.std(axis=(0, 1), keepdims=True)
-  if std.mean() < np.finfo(np.float16).eps:
-    return im
-  avg = im.mean(axis=(0, 1), keepdims=True)
-  return (im - avg) / std
 
 def make_frame_delta(in_dp:Path):
   assert in_dp.is_dir()
@@ -33,13 +18,12 @@ def make_frame_delta(in_dp:Path):
   out_dp.mkdir(exist_ok=True)
 
   fps = list(in_dp.iterdir())
-  im0, im1 = None, get_img(fps[0])
+  im0, im1 = None, get_im(fps[0])
   for fp in tqdm(fps[1:]):
-    im0, im1 = im1, get_img(fp)
+    im0, im1 = im1, get_im(fp)
     d = im1 - im0           # [-1, 1]
-    d_n = (d + 1) / 2       # [0, 1]
-    d_i = (d_n * np.iinfo(np.uint8).max).astype(np.uint8)   # [0, 255]
-    img = Image.fromarray(d_i)
+    d_n = im_shift_01(d)    # [0, 1]
+    img = im_to_img(d_n)
     img.save(out_dp / f'{fp.stem}.png')
 
 
@@ -55,8 +39,8 @@ def compare_frame_delta(dp1:Path, dp2:Path):
     fps2 = fps2[:minlen]
 
   for fp1, fp2 in zip(fps1, fps2):
-    im1, im2 = get_img(fp1).astype(np.float32), get_img(fp2).astype(np.float32)   # [0, 1]
-    s1,  s2  = (im1 > 0.5).astype(np.float32), (im2 > 0.5).astype(np.float32)
+    im1, im2 = get_im(fp1).astype(dtype), get_im(fp2).astype(dtype)   # [0, 1]
+    s1,  s2  = (im1 > 0.5).astype(dtype), (im2 > 0.5).astype(dtype)
 
     plt.subplot(231) ; plt.imshow(im1)       ; plt.axis('off')
     plt.subplot(232) ; plt.imshow(s1)        ; plt.axis('off')

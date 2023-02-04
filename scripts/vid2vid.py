@@ -6,7 +6,7 @@ import shutil
 from re import compile as Regex
 from pathlib import Path
 from subprocess import Popen
-from PIL import Image, ImageFilter
+from PIL import Image
 from PIL.Image import Image as PILImage
 from enum import Enum
 from collections import Counter
@@ -20,7 +20,6 @@ from tqdm import tqdm
 import torch
 import torch.nn.functional as F
 import numpy as np
-from numpy.typing import NDArray
 import cv2
 
 from modules.scripts import Script
@@ -30,6 +29,9 @@ from modules.devices import torch_gc, autocast, device, cpu
 from modules.shared import opts, state
 from modules.processing import Processed, StableDiffusionProcessingImg2Img, get_fixed_seed, process_images_inner
 from modules.images import resize_image
+from modules.sd_samplers_common import setup_img2img_steps
+
+from helpers.img_utils import *
 
 try:
     # should be <sd-webui> root abspath
@@ -66,6 +68,7 @@ try:
 except:
     print_exc()
     raise RuntimeError('<< integrity check failed, please check your installation :(')
+
 
 class ImageFormat(Enum):
     PNG  = 'png'
@@ -123,6 +126,7 @@ if 'global consts':
     WS_FRAMES               = 'frames'
     WS_AUDIO                = 'audio.wav'
     WS_DFRAME               = 'framedelta'
+    WS_MOTION               = 'motionmask'
     WS_MASK                 = 'depthmask'
     WS_TAGS                 = 'tags.json'
     WS_TAGS_TOPK            = 'tags-topk.txt'
@@ -174,8 +178,9 @@ if 'global consts':
     CHOICES_RIFE_MODEL      = get_rife_model_names()
     CHOICES_FRAME_SRC       = [
         WS_FRAMES,
-        WS_MASK,
         WS_DFRAME,
+        WS_MOTION,
+        WS_MASK,
         WS_IMG2IMG,
         WS_RESR,
         WS_RIFE,
@@ -193,10 +198,10 @@ if 'global consts':
     DEFAULT_DENOISE_W       = __(LABEL_DENOISE_W, 0.85)
     DEFAULT_INIT_NOISE_W    = __(LABEL_INIT_NOISE_W, 1.0)
     DEFAULT_SIGMA_METH      = __(LABEL_SIGMA_METH, NoiseSched.EXP.value)
-    DEFAULT_SIGMA_MAX       = __(LABEL_SIGMA_MAX, 1.2)
     DEFAULT_SIGMA_MIN       = __(LABEL_SIGMA_MIN, 0.1)
-    DEFAULT_FDC_METH        = __(LABEL_FDC_METH, FrameDeltaCorrection.NORM.value)
-    DEFAULT_MASK_MOTION_LC  = __(LABEL_MASK_MOTION_LC, 4)
+    DEFAULT_SIGMA_MAX       = __(LABEL_SIGMA_MAX, 1.2)
+    DEFAULT_FDC_METH        = __(LABEL_FDC_METH, FrameDeltaCorrection.STD.value)
+    DEFAULT_MASK_MOTION_LC  = __(LABEL_MASK_MOTION_LC, 32)
     DEFAULT_MASK_DEPTH_LC   = __(LABEL_MASK_DEPTH_LC, -1)
     DEFAULT_RESR_MODEL      = __(LABEL_RESR_MODEL, 'realesr-animevideov3-x2')
     DEFAULT_RIFE_MODEL      = __(LABEL_RIFE_MODEL, 'rife-v4')
@@ -205,8 +210,6 @@ if 'global consts':
     DEFAULT_EXPORT_FMT      = __(LABEL_EXPORT_FMT, VideoFormat.MP4.value)
     DEFAULT_ALLOW_OVERWRITE = __(LABEL_ALLOW_OVERWRITE, True)
     DEFAULT_PROCESS_AUDIO   = __(LABEL_PROCESS_AUDIO, False)
-
-    MASK_MOTION_EXPAND_K = 7
 
     MATERIAL_HELP_HTML = '''
 <div>
@@ -233,19 +236,6 @@ def get_folder_file_count(dp:Union[Path, str]) -> int:
 
 def get_file_size(fp:Union[Path, str]) -> float:
     return os.path.getsize(fp) / 2**20
-
-def img_to_im(img: PILImage) -> NDArray[np.float32]:
-    assert isinstance(img, PILImage)
-
-    img = img.convert('RGB')
-    return np.asarray(img, dtype=np.float32) / 255.0    # [0.0, 1.0]
-
-def im_to_img(im: NDArray[np.float32]) -> PILImage:
-    assert 0 <= im.min() and im.max() <= 1.0
-    assert isinstance(im, np.ndarray)
-    assert im.dtype in [np.float16, np.float32, np.float64, np.half, np.single, np.double]
-
-    return Image.fromarray((im * np.iinfo(np.uint8).max).astype(np.uint8))
 
 
 # global runtime vars
@@ -463,20 +453,15 @@ def _btn_frame_delta() -> TaskResponse:
     out_dp.mkdir()
 
     try:
-        def get_img(fp: Path) -> NDArray[np.float32]:
-            img = Image.open(fp).convert('RGB')
-            return np.asarray(img, dtype=np.float32) / 255.0  # [H, W, C]
-
         fps = list(in_dp.iterdir())
-        im0, im1 = None, get_img(fps[0])
+        im0, im1 = None, get_im(fps[0], mode='RGB')
         for fp in tqdm(fps[1:]):
             if state.interrupted: break
 
-            im0, im1 = im1, get_img(fp)
-            d = im1 - im0           # [-1, 1]
-            d_n = (d + 1) / 2       # [0, 1]
-            d_i = (d_n * np.iinfo(np.uint8).max).astype(np.uint8)  # [0, 255]
-            img = Image.fromarray(d_i)
+            im0, im1 = im1, get_im(fp, mode='RGB')
+            delta = im1 - im0           # [-1, 1]
+            im = im_shift_01(delta)     # [0, 1]
+            img = im_to_img(im)
             img.save(out_dp / f'{fp.stem}.png')
 
         return RetCode.INFO, f'framedelta: {get_folder_file_count(out_dp)}'
@@ -526,7 +511,7 @@ def _btn_midas() -> TaskResponse:
             for fn in tqdm(list(in_dp.iterdir())):                  # TODO: make batch for speedup
                 if state.interrupted: break
 
-                img = Image.open(fn).convert('RGB')
+                img = get_img(fn, mode='RGB')
                 im = np.asarray(img, dtype=np.float32) / 255.0      # [H, W, C], float32
 
                 X_np = transform({'image': im})['image']            # [C, maxH, maxW], float32
@@ -573,7 +558,7 @@ def _btn_deepdanbooru(topk=32) -> TaskResponse:
         tags: Dict[str, str] = { }
         deepbooru_model.start()
         for fp in tqdm(list(in_dp.iterdir())):
-            img = Image.open(fp).convert('RGB')
+            img = get_img(fp, mode='RGB')
             tags[fp.name] = deepbooru_model.tag_multi(img)
 
         tags_flatten = []
@@ -795,7 +780,7 @@ class Script(Script):
 
                 with gr.Row(variant='compact').style(equal_height=True) as tab_param_frame:
                     fdc_methd          = gr.Dropdown(label=LABEL_FDC_METH,       value=lambda: DEFAULT_FDC_METH,       choices=CHOICES_FDC_METH)
-                    mask_motion_lowcut = gr.Slider  (label=LABEL_MASK_MOTION_LC, value=lambda: DEFAULT_MASK_MOTION_LC, minimum=0,  maximum=16, step=1)
+                    mask_motion_lowcut = gr.Slider  (label=LABEL_MASK_MOTION_LC, value=lambda: DEFAULT_MASK_MOTION_LC, minimum=-1, maximum=255, step=1)
                     mask_depth_lowcut  = gr.Slider  (label=LABEL_MASK_DEPTH_LC,  value=lambda: DEFAULT_MASK_DEPTH_LC,  minimum=-1, maximum=255, step=1)
 
                 img2img_mode.change(fn=lambda x: gr_show(Img2ImgMode(x) == Img2ImgMode.BATCH), inputs=img2img_mode, outputs=tab_param_frame, show_progress=False)
@@ -860,8 +845,8 @@ class Script(Script):
 
         if img2img_mode == Img2ImgMode.BATCH:
             use_fdc = fdc_methd != FrameDeltaCorrection.NONE
-            use_mask_depth  = mask_depth_lowcut >= 0
-            use_mask_motion = mask_motion_lowcut > 0
+            use_mask_depth  = mask_depth_lowcut  >= 0
+            use_mask_motion = mask_motion_lowcut >= 0
 
             if workspace is None:
                 return Processed(p, [], p.seed, 'no current workspace opened!')
@@ -936,6 +921,11 @@ class Script(Script):
             p.denoising_strength = denoise_w
             p.sampler_noise_scheduler_override = lambda step: sigma_fn(step).to(p.sd_model.device)
 
+            real_steps, t_enc = setup_img2img_steps(p)
+            sigmas = sigma_fn(steps).numpy().tolist()
+            real_sigmas = sigmas[real_steps - t_enc - 1:]
+            print(f'>> real sigmas: {real_sigmas}')
+
         if 'override & fix p settings':
             p.n_iter              = 1
             p.batch_size          = 1
@@ -946,11 +936,12 @@ class Script(Script):
             p.outpath_samples     = str(out_dp)
             p.initial_noise_multiplier = init_noise_w
 
-        # hijack .sample() method
-        #setattr(p, 'sample', lambda *args, **kwargs: StableDiffusionProcessingImg2Img_sample(p, *args, **kwargs))
+        if not 'hijack .sample() method':
+            setattr(p, 'sample', lambda *args, **kwargs: StableDiffusionProcessingImg2Img_sample(p, *args, **kwargs))
 
         def cfg_denoiser_hijack(param:CFGDenoiserParams):
-            print(f'>> [{param.sampling_step+1}/{param.total_sampling_steps}] sigma: {param.sigma[-1].item()}')
+            if not 'show real sigma':
+                print(f'>> [{param.sampling_step+1}/{param.total_sampling_steps}] sigma: {param.sigma[-1].item()}')
 
         try:
             on_cfg_denoiser(cfg_denoiser_hijack)
@@ -982,50 +973,25 @@ class Script(Script):
         depth_lowcut    = self.depth_lowcut
         init_fns        = os.listdir(init_dp)
 
+        motion_dp = workspace / WS_MOTION
+        motion_dp.mkdir(exist_ok=True)
+
         initial_info: str = None
         images: List[PILImage] = []
 
-        def get_init(idx:int) -> List[PILImage]:
-            return [Image.open(init_dp / init_fns[idx]).convert('RGB')]
+        def get_init(idx:int) -> PILImage:
+            return get_img(init_dp / init_fns[idx], mode='RGB')
 
-        def get_depth_mask(idx:int, lowcut:int=0) -> PILImage:
-            def renorm_mask(im:NDArray[np.uint8]) -> NDArray[np.uint8]:
-                # map under thresh to 0, renorm above thresh to [0.0, 1.0]
-                mask_v = im >= lowcut
-                im_v = im * mask_v
-                vmin, vmax = im_v.min(), im_v.max()
-                im = (im.astype(np.float32) - vmin) / (vmax - vmin)
-                im *= mask_v
-                im = (im * np.iinfo(np.uint8).max).astype(np.uint8)
-                return im
+        def get_depth(idx:int, lowcut:int=0) -> PILImage:
+            img = get_img(depth_dp / Path(init_fns[idx]).with_suffix('.png'))
+            return im_to_img(im_mask_lowcut(img_to_im(img), thresh=lowcut/255.0))   # [0.0, 1.0]
 
-            img = Image.open(depth_dp / Path(init_fns[idx]).with_suffix('.png')).convert('L')
-            im = np.asarray(img, dtype=np.uint8)
-            im = renorm_mask(im)
-            return Image.fromarray(im)
-
-        def get_delta(idx:int, w:int, h:int) -> NDArray[np.float32]:
-            img = Image.open(delta_dp / Path(init_fns[idx]).with_suffix('.png'))
+        def get_delta(idx:int, w:int, h:int) -> npimg:
+            img = get_img(delta_dp / Path(init_fns[idx]).with_suffix('.png'))
             img = resize_image(p.resize_mode, img, w, h)
-            im = np.asarray(img, dtype=np.float32) / 255.0  # [0.0, 1.0], non-normalized
-            im = im * 2 - 1                                 # [-1.0, 1.0]
-            return im
+            return im_shift_n1p1(img_to_im(img))        # [-1.0, 1.0]
 
-        def get_motion_mask(idx:int, w:int, h:int, lowcut:int=0) -> NDArray[np.float32]:
-            img = Image.open(delta_dp / Path(init_fns[idx]).with_suffix('.png')).convert('L')
-            img = resize_image(p.resize_mode, img, w, h)
-            im = np.asarray(img, dtype=np.float32) / 255.0  # [0.0, 1.0], non-normalized
-            im = im * 2 - 1                                 # [-1.0, 1.0]
-            im = np.abs(im)                                 # [0.0, 1.0], get the magnitude (maxval may < 1.0)
-            im /= im.max()                                  # re-norm to [0.0, 1.0]
-            alpha = -np.log(2) / np.log(1 - lowcut / 255)   # 放缩使得像素差值 thresh 的 mask 强度为 0.5
-            im = 1 - (1 - im) ** (1 + alpha)                # concave function on [0.0, 1.0]
-            img = im_to_img(im)
-            img = img.filter(ImageFilter.MaxFilter(size=MASK_MOTION_EXPAND_K))   # 扩散选区
-            im = img_to_im(img)
-            return im
-
-        last_frame:NDArray[np.float32] = None
+        last_frame: npimg = None
         iframe = 0
         def image_save_hijack(param:ImageSaveParams):
             # allow path length more than 260 chars...
@@ -1033,35 +999,29 @@ class Script(Script):
             # just make things short
             dp, fn = os.path.dirname(param.filename), os.path.basename(param.filename)
             name, ext = os.path.splitext(fn)
-            param.filename = os.path.join(dp, name[:5] + ext)     # just 5-digit serial number
+            sn = int(name[:5])
+            if sn <= 0: sn += 1     # just 5-digit serial number, starts from '00001'
+            param.filename = os.path.join(dp, f'{sn:05d}' + ext)
 
             # force RGB mode, RIFE not work on RGBA
             param.image = param.image.convert('RGB')
 
             if use_fdc or use_mask_motion:
-                nonlocal last_frame, iframe
+                nonlocal last_frame
 
                 if last_frame is not None:
                     this_frame = img_to_im(param.image)     # [0.0, 1.0]
                     H, W, C = this_frame.shape
+                    tgt_d = get_delta(iframe, W, H)         # [-1.0, 1.0]
 
                     if use_fdc:
                         cur_d = this_frame - last_frame     # [-1.0, 1.0]
-                        tgt_d = get_delta(iframe, W, H)     # [-1.0, 1.0]
 
                         if fdc_methd == FrameDeltaCorrection.CLIP:
                             new_d = cur_d.clip(tgt_d.min(), tgt_d.max())
                         else:
-                            cur_d_t = torch.from_numpy(cur_d)
-                            cur_avg = cur_d_t.mean(axis=[0, 1], keepdims=True).numpy()
-                            cur_std = cur_d_t.std (axis=[0, 1], keepdims=True).numpy()
-                            if cur_std.min() <= np.finfo(np.float32).min: cur_std = 1e-3
-                            cur_d_n = (cur_d - cur_avg) / cur_std
-
-                            tgt_d_t = torch.from_numpy(tgt_d)
-                            tgt_avg = tgt_d_t.mean(axis=[0, 1], keepdims=True).numpy()
-                            tgt_std = tgt_d_t.std (axis=[0, 1], keepdims=True).numpy()
-                            if tgt_std.min() <= np.finfo(np.float32).min: tgt_std = 1e-3
+                            cur_d_n, (cur_avg, cur_std) = im_norm(cur_d, ret_stats=True)
+                            tgt_d_n, (tgt_avg, tgt_std) = im_norm(tgt_d, ret_stats=True)
 
                             if   fdc_methd == FrameDeltaCorrection.AVG:  new_d = cur_d_n * cur_std + tgt_avg
                             elif fdc_methd == FrameDeltaCorrection.STD:  new_d = cur_d_n * tgt_std + cur_avg
@@ -1071,30 +1031,21 @@ class Script(Script):
 
                         if 'debug':
                             dd = np.abs(this_frame - last_frame)
-                            print('>> fds_pixel max:', dd.max(), 'mean:', dd.mean())
+                            print(f'>> fdc correction max: {dd.max()}, mean: {dd.mean()}')
 
                     if use_mask_motion:
                         cur_d = this_frame - last_frame     # [-1.0, 1.0]
 
-                        mask = get_motion_mask(iframe, W, H, motion_lowcut)    # [0.0, 1.0]
+                        mask = im_delta_to_motion(tgt_d, motion_lowcut/255.0, expand=MASK_MOTION_EXPAND)    # [0.0, 1.0]
+                        im_to_img(mask).save(motion_dp / Path(init_fns[iframe]).with_suffix('.png'))        # for more friendly debug
+
                         new_d = cur_d * mask
 
                         this_frame = last_frame + new_d
 
-                        if not 'debug':
-                            import matplotlib.pyplot as plt
-
-                            dd = new_d - cur_d
-                            plt.subplot(221) ; plt.imshow((cur_d + 1) / 2) ; plt.axis('off')
-                            plt.subplot(222) ; plt.imshow(mask)            ; plt.axis('off')
-                            plt.subplot(223) ; plt.imshow((new_d + 1) / 2) ; plt.axis('off')
-                            plt.subplot(224) ; plt.imshow((dd    + 1) / 2) ; plt.axis('off')
-                            plt.tight_layout()
-                            plt.show()
-
                         if 'debug':
                             dd = np.abs(this_frame - last_frame)
-                            print('>> mask_motion max:', dd.max(), 'mean:', dd.mean())
+                            print(f'>> motion correction max: {dd.max()}, mean: {dd.mean()}')
 
                     this_frame = this_frame.clip(0.0, 1.0)
                     param.image = im_to_img(this_frame)
@@ -1115,8 +1066,8 @@ class Script(Script):
                 state.job_no = i + 1
                 iframe = i
 
-                p.init_images = get_init(i)
-                p.image_mask  = get_depth_mask(i, depth_lowcut) if use_mask_depth else None
+                p.init_images = [get_init(i)]
+                p.image_mask  = get_depth(i, depth_lowcut) if use_mask_depth else None
 
                 proc = process_images_inner(p)
                 if initial_info is None: initial_info = proc.info

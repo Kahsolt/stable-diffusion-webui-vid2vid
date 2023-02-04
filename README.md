@@ -49,17 +49,17 @@ Resize mode: Just Resize
 CFG Scale: 7
 Seed: 114514
 
-Extracted FPS: 12
-Extracted fmt: png
+Extract FPS: 12
+Extract fmt: png
 Sampling steps: 20
-Denoising strength: 0.75
-Init noise weight: 0.95
+Denoising strength: 0.85
+Init noise weight: 1.0
 Sigma method: exponential
 Sigma sigma min: 0.1
 Sigma sigma max: 1.2
-Frame delta correction: avg & std
-Motion mask lowcut: 4
-Depth mask lowcut: 32
+Frame delta correction: std
+Motion mask lowcut: 0
+Depth mask lowcut: -1
 RESR model: animevideov3-x2
 RIFE model: rife-v4
 Interpolation ratio: 2
@@ -90,13 +90,30 @@ Notes:
 
 ⚪ Frame delta correction
 
-The original batch img2img might still not be successive or stable in re-painted details even with fine-tuned sigma schedule.  
-We apply **frame delta correction & mask** using frame delta info:  
+The original batch img2img might still not be successive or stable in re-painted details even with fine-tuned sigma schedule. 🤔  
+We apply **frame delta correction & motion mask** using frame delta info:  
 
 - match the delta for generated frames with the originals in statistics
 - use the delta as a kind of motion mask (rather depth mask)
 
-![frame_delta](img/frame_delta.png)
+| ![fd_small](img/fd_small.png) | ![fd_large](img/fd_large.png) |
+| :-: | :-: |
+| frame delta in most cases | frame delta on scene changing |
+
+motion mask:
+
+![mask_motion](img/mask_motion.png)
+
+debug the motion mask:
+
+![dbg_mm](img/dbg_mm.png)
+
+
+⚪ Depth map mask
+
+This is the more traditional way for masking...
+
+![mask_depth](img/mask_depth.png)
 
 
 ### Installation
