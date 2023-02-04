@@ -5,29 +5,44 @@ PUSHD %SD_PATH%
 SET SD_PATH=%CD%
 POPD
 
+REM SET VENV_PATH=C:\Miniconda3
 SET VENV_PATH=%SD_PATH%\venv
 ECHO VENV_PATH = %VENV_PATH%
 ECHO.
 
 SET PATH=%VENV_PATH%\Scripts;%PATH%
-DOSKEY py=python.exe $*
-DOSKEY ss=python.exe sigma_schedule.py $*
-DOSKEY sr=python.exe size_recommend.py $*
-DOSKEY im=python.exe image_info.py $*
-DOSKEY md=python.exe mask_depth.py $*
-DOSKEY mm=python.exe mask_motion.py $*
-DOSKEY fd=python.exe frame_delta.py $*
+SET PY_BIN=python.exe
 
-ECHO Cammand shortcuts:
-ECHO   py                    start python shell
-ECHO   ss                    run sigma_schedule.py
-ECHO   sr                    run size_recommend.py
-ECHO   im ^<file^>             run image_info.py
-ECHO   md ^<file^>             run mask_depth.py
-ECHO   mm ^<file^>             run mask_motion.py
-ECHO   fd ^<folder^>           run frame_delta.py ^(make^)
-ECHO   fd ^<folder^> ^<folder^>  run frame_delta.py ^(compare^)
-REM ECHO Python executables:
+%PY_BIN% --version > NUL
+IF ERRORLEVEL 1 GOTO die
 
-REM CMD /K "activate.bat & where python.exe"
+
+DOSKEY py=%PY_BIN% $*
+DOSKEY ss=%PY_BIN% sigma_schedule.py $*
+DOSKEY sr=%PY_BIN% size_recommend.py $*
+DOSKEY im=%PY_BIN% img_utils.py $*
+DOSKEY md=%PY_BIN% mask_depth.py $*
+DOSKEY mm=%PY_BIN% mask_motion.py $*
+
+ECHO Command shortcuts:
+ECHO   py     start python shell
+ECHO   ss     run sigma_schedule.py, view schedulers and sigma curves
+ECHO   sr     run size_recommend.py, giving advices on img2img canvas size
+ECHO   im     run img_utils.py, inspect basic image info
+ECHO   md     run mask_depth.py, draw grid
+ECHO   mm     run mask_motion.py, draw grid
+
 CMD /K "activate.bat"
+
+
+GOTO EOF
+
+:die
+ECHO ERRORLEVEL: %ERRORLEVEL%
+ECHO PATH: %PATH%
+ECHO Python executables:
+WHERE python.exe
+
+PAUSE
+
+:EOF

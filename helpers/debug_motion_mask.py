@@ -11,6 +11,7 @@ from img_utils import *
 # set the frame numder to debug :)
 iframe = 24
 lowcut = 32
+highext = 9
 
 ws_dp = Path(r'D:\Desktop\Workspace\@Githubs\stable-diffusion-webui\outputs\sd-webui-vid2vid\demo')
 imgA  = get_img(ws_dp / 'img2img'    / f'{iframe:05d}.png')
@@ -27,7 +28,7 @@ tgt_d = im_shift_n1p1(img_to_im(fd))  # [-1, 1]
 cur_d = imB - imA                     # [-1, 1]
 dd    = cur_d - tgt_d                 # [-2, 2]
 
-mask = im_delta_to_motion(tgt_d, thresh=lowcut/255, expand=MASK_MOTION_EXPAND)  # [0, 1]
+mask = im_delta_to_motion(tgt_d, thresh=lowcut/255, expand=highext)  # [0, 1]
 im_stat(mask, 'mask')
 
 new_d = cur_d * mask

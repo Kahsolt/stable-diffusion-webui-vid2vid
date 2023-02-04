@@ -84,7 +84,7 @@ class VideoFormat(Enum):
 class ExtractFrame(Enum):
     # ref: https://ottverse.com/i-p-b-frames-idr-keyframes-differences-usecases/
     FPS = '(fixed FPS)'
-    IPB = 'I/P/B all frames'
+    IPB = 'I/P/B frames all'
     I   = 'I frames only'
     P   = 'P frames only'
     B   = 'B frames only'
@@ -156,9 +156,10 @@ if 'global consts':
     LABEL_SIGMA_MIN         = 'Sigma min'
     LABEL_SIGMA_MAX         = 'Sigma max'
     LABEL_INIT_NOISE_W      = 'Init noise weight'
-    LABEL_FDC_METH          = 'Frame delta correction'
-    LABEL_MASK_MOTION_LC    = 'Motion mask low-cut'
-    LABEL_MASK_DEPTH_LC     = 'Depth mask low-cut'
+    LABEL_FDC_METH          = 'Statistical correction'
+    LABEL_MOTION_HIGHEXT    = 'Motion mask high-expand'
+    LABEL_MOTION_LOWCUT     = 'Motion mask low-cut'
+    LABEL_DEPTH_LOWCUT      = 'Depth mask low-cut'
     LABEL_RESR_MODEL        = 'Real-ESRGAN model'
     LABEL_RIFE_MODEL        = 'RIFE model'
     LABEL_RIFE_RATIO        = 'Interpolation ratio'
@@ -201,8 +202,9 @@ if 'global consts':
     DEFAULT_SIGMA_MIN       = __(LABEL_SIGMA_MIN, 0.1)
     DEFAULT_SIGMA_MAX       = __(LABEL_SIGMA_MAX, 1.2)
     DEFAULT_FDC_METH        = __(LABEL_FDC_METH, FrameDeltaCorrection.STD.value)
-    DEFAULT_MASK_MOTION_LC  = __(LABEL_MASK_MOTION_LC, 32)
-    DEFAULT_MASK_DEPTH_LC   = __(LABEL_MASK_DEPTH_LC, -1)
+    DEFAULT_MOTION_HIGHEXT  = __(LABEL_MOTION_HIGHEXT, 7)
+    DEFAULT_MOTION_LOWCUT   = __(LABEL_MOTION_LOWCUT, 32)
+    DEFAULT_DEPTH_LOWCUT    = __(LABEL_DEPTH_LOWCUT, -1)
     DEFAULT_RESR_MODEL      = __(LABEL_RESR_MODEL, 'realesr-animevideov3-x2')
     DEFAULT_RIFE_MODEL      = __(LABEL_RIFE_MODEL, 'rife-v4')
     DEFAULT_RIFE_RATIO      = __(LABEL_RIFE_RATIO, 2.0)
@@ -779,13 +781,14 @@ class Script(Script):
                 sigma_meth.change(fn=lambda x: gr_show(NoiseSched(x) != NoiseSched.DEFAULT), inputs=sigma_meth, outputs=tab_sigma_sched, show_progress=False)
 
                 with gr.Row(variant='compact').style(equal_height=True) as tab_param_frame:
-                    fdc_methd          = gr.Dropdown(label=LABEL_FDC_METH,       value=lambda: DEFAULT_FDC_METH,       choices=CHOICES_FDC_METH)
-                    mask_motion_lowcut = gr.Slider  (label=LABEL_MASK_MOTION_LC, value=lambda: DEFAULT_MASK_MOTION_LC, minimum=-1, maximum=255, step=1)
-                    mask_depth_lowcut  = gr.Slider  (label=LABEL_MASK_DEPTH_LC,  value=lambda: DEFAULT_MASK_DEPTH_LC,  minimum=-1, maximum=255, step=1)
+                    fdc_methd      = gr.Dropdown(label=LABEL_FDC_METH,       value=lambda: DEFAULT_FDC_METH,       choices=CHOICES_FDC_METH)
+                    motion_highext = gr.Slider  (label=LABEL_MOTION_HIGHEXT, value=lambda: DEFAULT_MOTION_HIGHEXT, minimum=1,  maximum=15, step=2)
+                    motion_lowcut  = gr.Slider  (label=LABEL_MOTION_LOWCUT,  value=lambda: DEFAULT_MOTION_LOWCUT,  minimum=-1, maximum=255, step=1)
+                    depth_lowcut   = gr.Slider  (label=LABEL_DEPTH_LOWCUT,   value=lambda: DEFAULT_DEPTH_LOWCUT,   minimum=-1, maximum=255, step=1)
 
                 img2img_mode.change(fn=lambda x: gr_show(Img2ImgMode(x) == Img2ImgMode.BATCH), inputs=img2img_mode, outputs=tab_param_frame, show_progress=False)
 
-                gr.HTML(html.escape(r'=> expected to get img2img\*.png'))
+                gr.HTML(html.escape(r'=> expected to get img2img\*.png, motionmask\*.png'))
 
             with gr.Tab('4: Upscale & interpolate'):
                 with gr.Row().style(equal_height=True):
@@ -825,14 +828,14 @@ class Script(Script):
             img2img_mode, 
             init_noise_w, sigma_meth, 
             steps, denoise_w, sigma_min, sigma_max, 
-            fdc_methd, mask_motion_lowcut, mask_depth_lowcut, 
+            fdc_methd, motion_highext, motion_lowcut, depth_lowcut, 
         ]
 
     def run(self, p:StableDiffusionProcessingImg2Img, 
             img2img_mode:str, 
             init_noise_w:float, sigma_meth:str, 
             steps:int, denoise_w:float, sigma_min:float, sigma_max:float, 
-            fdc_methd:str, mask_motion_lowcut:int, mask_depth_lowcut:int, 
+            fdc_methd:str, motion_highext:int, motion_lowcut:int, depth_lowcut:int, 
         ):
 
         img2img_mode: Img2ImgMode = Img2ImgMode(img2img_mode)
@@ -845,8 +848,8 @@ class Script(Script):
 
         if img2img_mode == Img2ImgMode.BATCH:
             use_fdc = fdc_methd != FrameDeltaCorrection.NONE
-            use_mask_depth  = mask_depth_lowcut  >= 0
-            use_mask_motion = mask_motion_lowcut >= 0
+            use_depth  = depth_lowcut  >= 0
+            use_motion = motion_lowcut >= 0
 
             if workspace is None:
                 return Processed(p, [], p.seed, 'no current workspace opened!')
@@ -867,7 +870,7 @@ class Script(Script):
                 n_inits = get_folder_file_count(frames_dp)
 
                 delta_dp = workspace / WS_DFRAME
-                if use_fdc or use_mask_motion:
+                if use_fdc or use_motion:
                     if not delta_dp.exists():
                         return Processed(p, [], p.seed, f'framedelta folder not found: {delta_dp}')
                     n_delta = get_folder_file_count(delta_dp)
@@ -875,24 +878,23 @@ class Script(Script):
                         return Processed(p, [], p.seed, f'number mismatch for n_delta ({n_delta}) != n_frames ({n_inits}) - 1')
 
                 depth_dp = workspace / WS_MASK
-                if use_mask_depth:
+                if use_depth:
                     if not depth_dp.exists():
                         return Processed(p, [], p.seed, f'mask folder not found: {depth_dp}')
                     n_masks = get_folder_file_count(depth_dp)
                     if n_masks != n_inits:
                         return Processed(p, [], p.seed, f'number mismatch for n_masks ({n_masks}) != n_frames ({n_inits})')
 
-            self.init_dp         = frames_dp
-
-            self.depth_dp        = depth_dp
-            self.use_mask_depth  = use_mask_depth
-            self.depth_lowcut    = mask_depth_lowcut
-
-            self.delta_dp        = delta_dp
-            self.use_fdc         = use_fdc
-            self.fdc_methd       = fdc_methd
-            self.use_mask_motion = use_mask_motion
-            self.motion_lowcut   = mask_motion_lowcut
+            self.init_dp        = frames_dp
+            self.delta_dp       = delta_dp
+            self.depth_dp       = depth_dp
+            self.use_fdc        = use_fdc
+            self.fdc_methd      = fdc_methd
+            self.use_motion     = use_motion
+            self.motion_lowcut  = motion_lowcut
+            self.motion_highext = motion_highext
+            self.use_depth      = use_depth
+            self.depth_lowcut   = depth_lowcut
         else:
             if workspace is not None:
                 out_dp = workspace / WS_IMG2IMG_DEBUG
@@ -921,6 +923,7 @@ class Script(Script):
             p.denoising_strength = denoise_w
             p.sampler_noise_scheduler_override = lambda step: sigma_fn(step).to(p.sd_model.device)
 
+        if 'show real sigma':
             real_steps, t_enc = setup_img2img_steps(p)
             sigmas = sigma_fn(steps).numpy().tolist()
             real_sigmas = sigmas[real_steps - t_enc - 1:]
@@ -962,16 +965,17 @@ class Script(Script):
         return proc.images, proc.info
 
     def run_batch_img2img(self, p: StableDiffusionProcessingImg2Img) -> Tuple[List[PILImage], str]:
-        init_dp         = self.init_dp
-        delta_dp        = self.delta_dp
-        depth_dp        = self.depth_dp
-        use_fdc         = self.use_fdc
-        fdc_methd       = self.fdc_methd
-        use_mask_motion = self.use_mask_motion
-        motion_lowcut   = self.motion_lowcut
-        use_mask_depth  = self.use_mask_depth
-        depth_lowcut    = self.depth_lowcut
-        init_fns        = os.listdir(init_dp)
+        init_dp        = self.init_dp
+        delta_dp       = self.delta_dp
+        depth_dp       = self.depth_dp
+        use_fdc        = self.use_fdc
+        fdc_methd      = self.fdc_methd
+        use_motion     = self.use_motion
+        motion_lowcut  = self.motion_lowcut
+        motion_highext = self.motion_highext
+        use_depth      = self.use_depth
+        depth_lowcut   = self.depth_lowcut
+        init_fns       = os.listdir(init_dp)
 
         motion_dp = workspace / WS_MOTION
         motion_dp.mkdir(exist_ok=True)
@@ -994,19 +998,16 @@ class Script(Script):
         last_frame: npimg = None
         iframe = 0
         def image_save_hijack(param:ImageSaveParams):
-            # allow path length more than 260 chars...
-            #param.filename = '\\\\?\\' + param.filename
-            # just make things short
-            dp, fn = os.path.dirname(param.filename), os.path.basename(param.filename)
-            name, ext = os.path.splitext(fn)
-            sn = int(name[:5])
-            if sn <= 0: sn += 1     # just 5-digit serial number, starts from '00001'
-            param.filename = os.path.join(dp, f'{sn:05d}' + ext)
+            # just 5-digit serial number, starts from '00001'
+            fp = Path(param.filename)
+            sn = int(fp.stem[:5])
+            if sn <= 0: sn += 1
+            param.filename = str(fp.parent / f'{sn:05d}' + fp.suffix)
 
             # force RGB mode, RIFE not work on RGBA
             param.image = param.image.convert('RGB')
 
-            if use_fdc or use_mask_motion:
+            if use_fdc or use_motion:
                 nonlocal last_frame
 
                 if last_frame is not None:
@@ -1029,25 +1030,25 @@ class Script(Script):
 
                         this_frame = last_frame + new_d
 
-                        if 'debug':
+                        if not 'debug':
                             dd = np.abs(this_frame - last_frame)
                             print(f'>> fdc correction max: {dd.max()}, mean: {dd.mean()}')
 
-                    if use_mask_motion:
+                    if use_motion:
                         cur_d = this_frame - last_frame     # [-1.0, 1.0]
 
-                        mask = im_delta_to_motion(tgt_d, motion_lowcut/255.0, expand=MASK_MOTION_EXPAND)    # [0.0, 1.0]
-                        im_to_img(mask).save(motion_dp / Path(init_fns[iframe]).with_suffix('.png'))        # for more friendly debug
+                        mask = im_delta_to_motion(tgt_d, motion_lowcut/255.0, expand=motion_highext)    # [0.0, 1.0]
+                        im_to_img(mask).save(motion_dp / Path(init_fns[iframe]).with_suffix('.png'))    # for debug
 
                         new_d = cur_d * mask
 
                         this_frame = last_frame + new_d
 
-                        if 'debug':
+                        if not 'debug':
                             dd = np.abs(this_frame - last_frame)
                             print(f'>> motion correction max: {dd.max()}, mean: {dd.mean()}')
 
-                    this_frame = this_frame.clip(0.0, 1.0)
+                    this_frame = im_clip(this_frame)
                     param.image = im_to_img(this_frame)
 
                     last_frame = this_frame
@@ -1067,7 +1068,7 @@ class Script(Script):
                 iframe = i
 
                 p.init_images = [get_init(i)]
-                p.image_mask  = get_depth(i, depth_lowcut) if use_mask_depth else None
+                p.image_mask  = get_depth(i, depth_lowcut) if use_depth else None
 
                 proc = process_images_inner(p)
                 if initial_info is None: initial_info = proc.info

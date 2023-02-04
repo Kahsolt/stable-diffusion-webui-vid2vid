@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-# Author:Armit
-# Create Time:2023/02/02 
+# Author: Armit
+# Create Time: 2023/02/02 
 
+import sys
 from PIL import Image, ImageFilter
 from PIL.Image import Image as PILImage
 from typing import Tuple, List, Union
@@ -15,8 +16,6 @@ import matplotlib.pyplot as plt
 dtype = np.float32
 npimg = NDArray[dtype]
 eps   = np.finfo(dtype).eps
-
-MASK_MOTION_EXPAND = 5
 
 
 ''' decrators '''
@@ -190,3 +189,13 @@ def im_to_img(im:npimg) -> PILImage:
   im = (im * np.iinfo(np.uint8).max).astype(np.uint8)   # [0, 255]
   if im.shape[-1] == 1: im = im.squeeze(axis=-1)        # [H, W, C=3] or # [H, W]
   return Image.fromarray(im)                            # 'RGB' or 'L'
+
+
+if __name__ == '__main__':
+  fp = sys.argv[1]
+
+  img = get_img(fp)
+  img_stat(img)
+
+  im = img_to_im(img)
+  im_stat(im, px=True)

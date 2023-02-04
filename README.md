@@ -1,6 +1,6 @@
 # stable-diffusion-webui-vid2vid
 
-    Translate a video to AI generated video, extension script for AUTOMATIC1111/stable-diffusion-webui.
+    Translate a video to AI generated video, batch img2img with frame delta correction, extension script for AUTOMATIC1111/stable-diffusion-webui.
 
 ----
 
@@ -16,8 +16,11 @@
 
 ![:stable-diffusion-webui-vid2vid](https://count.getloli.com/get/@:stable-diffusion-webui-vid2vid)
 
-Convert a video to an AI generated video through a pipeline of model neural models: Stable-Diffusion, DeepDanbooru, Midas, Real-ESRGAN, RIFE, etc.  
+Convert a video to an AI generated video through a pipeline of model neural models: Stable-Diffusion, DeepDanbooru, Midas, Real-ESRGAN, RIFE, with tricks of **overrided sigma schedule** and **frame delta correction**.  
 Although it sounds like the old joke that an English wizard turns a walnut into another walnut by reciting a tongue-twisting spell. 🤣  
+
+⚠ 我们成立了插件反馈 QQ 群: 616795645 (赤狐屿)，欢迎出建议、意见、报告bug等 (w  
+⚠ We have a QQ chat group (616795645) now, any suggestions, discussions and bug reports are highly wellllcome!!  
 
 ℹ This script is only applicable in `img2img` tab :)  
 ⚠ some tasks will take a real long time, **DO NOT** click the button twice, juts see progress bar on console!!
@@ -57,7 +60,8 @@ Init noise weight: 1.0
 Sigma method: exponential
 Sigma sigma min: 0.1
 Sigma sigma max: 1.2
-Frame delta correction: std
+Statistical correction: std
+Motion mask highext: 7
 Motion mask lowcut: 0
 Depth mask lowcut: -1
 RESR model: animevideov3-x2
@@ -71,7 +75,7 @@ Export fmt: mp4
 
 ![How it works](img/How%20it%20works.png)
 
-⚪ Sigma schedule (overrided)
+⚪ Sigma schedule
 
 **Sigma schedule** controls the magnitude to denoise a latent image at each sampling step, and it should be an annealing process so that the final painting converges to some local optimal.  
 This extension allows you to override the default sigma scheduling, now you can fine-tune the annealing process on your own.  
@@ -88,13 +92,13 @@ Notes:
   - for different schedulers, try `linear` and `exponential` first to understand the behaviour! 😀
   - before the real work, the `single img2img (for debug)` mode in tab `3: Successive Img2Img` is your playground to tune things~
 
-⚪ Frame delta correction
+⚪ Frame delta correction (FDC)
 
-The original batch img2img might still not be successive or stable in re-painted details even with fine-tuned sigma schedule. 🤔  
-We apply **frame delta correction & motion mask** using frame delta info:  
+The original batch img2img might still not be that consistent, successive or stable in re-painted details even with fine-tuned sigma schedule. 🤔  
+We apply frame delta **stats correction & motion mask** using frame delta info:  
 
 - match the delta for generated frames with the originals in statistics
-- use the delta as a kind of motion mask (rather depth mask)
+- transform the delta as a kind of motion mask (rather depth mask)
 
 | ![fd_small](img/fd_small.png) | ![fd_large](img/fd_large.png) |
 | :-: | :-: |
