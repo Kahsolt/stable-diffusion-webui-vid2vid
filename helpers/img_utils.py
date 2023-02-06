@@ -92,15 +92,17 @@ def im_eq(im1:npimg, im2:npimg, eps:float=1/256) -> bool:
 def im_clip(im:npimg) -> npimg:
   return im.clip(0.0, 1.0)
 
-def im_minmax_norm(im:npimg, chan_wise=True) -> Union[npimg, Tuple[npimg, Tuple[float, float]]]:
+def im_minmax_norm(im:npimg, chan_wise=True) -> npimg:
   if chan_wise:
     vmin = im.min(axis=0, keepdims=True).min(axis=1, keepdims=True)
     vmax = im.max(axis=0, keepdims=True).max(axis=1, keepdims=True)
+    if (vmax - vmin).mean() < eps: return im
   else:
     vmin, vmax = im.min(), im.max()
+    if vmax - vmin < eps: return im
   return (im - vmin) / (vmax - vmin)
 
-def im_norm(im:npimg, chan_wise=True, ret_stats=False) -> npimg:
+def im_norm(im:npimg, chan_wise=True, ret_stats=False) -> Union[npimg, Tuple[npimg, Tuple[float, float]]]:
   if chan_wise:
     try:
       std = im.std (axis=(0, 1), keepdims=True)
@@ -133,11 +135,20 @@ def im_shift_n1p1(im:npimg) -> npimg:
 @valid_im
 def im_mask_lowcut(im:npimg, thresh:float=0.0) -> npimg:
   assert type(thresh) == float
-
   # map pixel under thresh to 0, renorm above thresh to [0.0, 1.0]
   mask = im >= thresh
   im = im * mask
   return im_minmax_norm(im)
+
+@valid_im
+def im_mask_highcut(im:npimg, thresh:float=0.0) -> npimg:
+  assert type(thresh) == float
+  # clip pixel above thresh to 1.0, renorm below thresh to [0.0, 1.0]
+  mask = im <= thresh
+  im_low = im * mask
+  im_low = im_minmax_norm(im_low)
+  im_high = np.ones_like(im) * ~mask
+  return im_low + im_high
 
 def im_mask_highext(im:npimg, size:int=7) -> npimg:
   # expand hot area by a Max filter
@@ -150,15 +161,21 @@ def im_mask_highext(im:npimg, size:int=7) -> npimg:
 def im_delta_to_motion(im:npimg, thresh:float=0.0, expand:int=7, px:int=4) -> npimg:
   assert type(thresh) == float
 
+  if 'to grey':
+    im = im_shift_01(im)
+    img = im_to_img(im).convert('L')
+    im = img_to_im(img)
+    im = im_shift_n1p1(im)
+  
   im = np.abs(im)                     # [0.0, 1.0], get the magnitude (maxval may < 1.0)
   im = im_minmax_norm(im)             # strech to fill [0.0, 1.0]
-  F = -np.log2(1 - px/255) ** -1      # 使得像素差值 px 的 mask 强度为 0.5
+  im = im_mask_highcut(im, thresh)    # high-cut, [0.0, 1.0]
+  F = -np.log2(1 - px/255) ** -1      # high-boost, 使得像素差值 px 的 mask 强度为 0.5
   alpha = (1 - thresh) * F            # 颠倒一下数值映射顺序
   im = 1 - (1 - im) ** (1 + alpha)    # some concave function on [0.0, 1.0], boost up values
-  if not 'debug':
+  if 'debug':
     print('mask.avg:', im.mean())
-  return im_mask_highext(im, expand)
-
+  return im_mask_highext(im, expand)  # high-ext
 
 def show_img(im:npimg, title=None):
   plt.clf()
@@ -182,8 +199,9 @@ def show_grid(ims:List[npimg], title=None):
 
 @valid_img
 def img_to_im(img:PILImage) -> npimg:
-  im = np.asarray(img, dtype=dtype) / 255.0             # [0.0, 1.0]
-  if len(im.shape) == 2: np.expand_dims(im, axis=-1)    # [H, W, C=1/3]
+  im = np.asarray(img, dtype=dtype) / 255.0   # [0.0, 1.0]
+  if len(im.shape) == 2:
+    im = np.expand_dims(im, axis=-1)          # [H, W, C=1/3]
   return im
 
 @valid_im

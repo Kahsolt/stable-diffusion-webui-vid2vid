@@ -20,6 +20,53 @@ from img_utils import *
 
 FIG_SIZE = (16, 8)
 
+FDC_METHODS = [
+  'none',
+  'clip',
+  'mean',
+  'std',
+  'mean & std',
+]
+
+
+def fdc_process(fdc_meth:str, lowcut:int, highext:int, imA:npimg, cur_d:npimg, tgt_d:npimg):
+  new_d = cur_d
+  imZ   = imA
+  mask  = np.zeros_like(imA)
+
+  if lowcut >= 0:
+    mask = im_delta_to_motion(tgt_d, thresh=lowcut/255, expand=highext)  # [0, 1]
+    new_d = cur_d * mask
+    imZ = im_clip(imA + new_d)
+
+  if not 'debug':
+    im_stat(mask, 'mask')
+    im_stat(cur_d, 'cur_d')
+    im_stat(tgt_d, 'tgt_d')
+    im_stat(new_d, 'new_d')
+    print()
+
+
+  if fdc_meth == 'clip':
+    new_d = cur_d.clip(tgt_d.min(), tgt_d.max())
+  else:
+    cur_d_n, (cur_avg, cur_std) = im_norm(cur_d, ret_stats=True)
+    tgt_d_n, (tgt_avg, tgt_std) = im_norm(tgt_d, ret_stats=True)
+
+    if   fdc_meth == 'mean':       new_d = cur_d_n * cur_std + tgt_avg
+    elif fdc_meth == 'std':        new_d = cur_d_n * tgt_std + cur_avg
+    elif fdc_meth == 'mean & std': new_d = cur_d_n * tgt_std + tgt_avg
+    imZ = im_clip(imA + new_d)
+
+  if not 'debug':
+    im_stat(cur_d, 'cur_d')
+    im_stat(tgt_d, 'tgt_d')
+    im_stat(new_d, 'new_d')
+    print()
+  
+  return new_d, imZ, mask
+
+
 class App:
 
   def __init__(self):
@@ -34,7 +81,7 @@ class App:
   def setup_gui(self):
     # window
     wnd = tk.Tk()
-    wnd.title('Motion Mask Debugger')
+    wnd.title('FDC Debugger')
     wnd.protocol('WM_DELETE_WINDOW', wnd.quit)
     self.wnd = wnd
 
@@ -44,13 +91,14 @@ class App:
     if True:
       self.var_ws      = tk.StringVar(frm1, value='')
       self.var_idx     = tk.IntVar   (frm1, value=1)
+      self.var_fcd     = tk.StringVar(frm1, value='none')
       self.var_highext = tk.IntVar   (frm1, value=7)
       self.var_lowcut  = tk.IntVar   (frm1, value=0)
       
       frm11 = ttk.Label(frm1)
       frm11.pack(expand=tk.YES, fill=tk.X)
       if True:
-        ttk.Label(frm11, text='Workspace Folder: ').pack(side=tk.LEFT, expand=tk.NO)
+        ttk.Label(frm11, text='Workspace Folder: ').pack(side=tk.LEFT)
         ttk.Label(frm11, textvariable=self.var_ws).pack(side=tk.LEFT, expand=tk.YES, fill=tk.X)
         ttk.Button(frm11, text='Open...', command=self.open_).pack()
 
@@ -58,21 +106,29 @@ class App:
       frm12.pack(expand=tk.YES, fill=tk.X)
       if True:
         frm121 = ttk.Label(frm12)
-        frm121.pack(side=tk.LEFT, expand=tk.YES, fill=tk.X)
+        frm121.pack(side=tk.LEFT)
         if True:
-          tk.Label(frm121, text='High-expand').pack(side=tk.LEFT, expand=tk.NO)
-          tk.Scale(frm121, command=lambda _: self.redraw(), variable=self.var_highext, orient=tk.HORIZONTAL, from_=1, to=15, resolution=2).pack(side=tk.RIGHT, expand=tk.YES, fill=tk.X)
+          tk.Label(frm121, text='Stats correct').pack(side=tk.LEFT)
+          cb = ttk.Combobox(frm121, textvariable=self.var_fcd, values=FDC_METHODS, state='readonly')
+          cb.bind('<<ComboboxSelected>>', lambda _: self.redraw())
+          cb.pack(side=tk.RIGHT)
 
         frm122 = ttk.Label(frm12)
-        frm122.pack(side=tk.RIGHT, expand=tk.YES, fill=tk.X)
+        frm122.pack(side=tk.LEFT, expand=tk.YES, fill=tk.X)
         if True:
-          tk.Label(frm122, text='Low-cut').pack(side=tk.LEFT, expand=tk.NO)
-          tk.Scale(frm122, command=lambda _: self.redraw(), variable=self.var_lowcut, orient=tk.HORIZONTAL, from_=0, to=255, resolution=1).pack(side=tk.RIGHT, expand=tk.YES, fill=tk.X)
+          tk.Label(frm122, text='Mask High-expand').pack(side=tk.LEFT)
+          tk.Scale(frm122, command=lambda _: self.redraw(), variable=self.var_highext, orient=tk.HORIZONTAL, from_=1, to=15, resolution=2).pack(side=tk.RIGHT, expand=tk.YES, fill=tk.X)
+
+        frm123 = ttk.Label(frm12)
+        frm123.pack(side=tk.RIGHT, expand=tk.YES, fill=tk.X)
+        if True:
+          tk.Label(frm123, text='Mask Low-cut').pack(side=tk.LEFT)
+          tk.Scale(frm123, command=lambda _: self.redraw(), variable=self.var_lowcut, orient=tk.HORIZONTAL, from_=-1, to=255, resolution=1).pack(side=tk.RIGHT, expand=tk.YES, fill=tk.X)
 
       frm13 = ttk.Label(frm1)
       frm13.pack(expand=tk.YES, fill=tk.X)
       if True:
-        ttk.Label(frm13, text='Frame Number').pack(side=tk.LEFT, expand=tk.NO)
+        ttk.Label(frm13, text='Frame Number').pack(side=tk.LEFT)
         sc = tk.Scale(frm13, command=lambda _: self.redraw(new=True), variable=self.var_idx, orient=tk.HORIZONTAL, from_=1, to=1, resolution=1, tickinterval=10)
         sc.pack(expand=tk.YES, fill=tk.X)
         self.sc_idx = sc
@@ -109,9 +165,10 @@ class App:
     ws_dp = Path(ws_dp)
     if not ws_dp.exists(): return
     
-    iframe  = self.var_idx    .get()
-    lowcut  = self.var_lowcut .get()
-    highext = self.var_highext.get()
+    iframe   = self.var_idx    .get()
+    fdc_meth = self.var_fcd    .get()
+    lowcut   = self.var_lowcut .get()
+    highext  = self.var_highext.get()
 
     if new: # new frame
       imgA  = get_img(ws_dp / 'img2img'    / f'{iframe:05d}.png')
@@ -128,15 +185,7 @@ class App:
       cur_d = imB - imA                     # [-1, 1]
       dd    = cur_d - tgt_d                 # [-2, 2]
 
-      mask = im_delta_to_motion(tgt_d, thresh=lowcut/255, expand=highext)  # [0, 1]
-      #im_stat(mask, 'mask')
-
-      new_d = cur_d * mask
-      #im_stat(cur_d, 'cur_d')
-      #im_stat(tgt_d, 'tgt_d')
-      #im_stat(new_d, 'new_d')
-
-      imZ = im_clip(imA + new_d)
+      new_d, imZ, mask = fdc_process(fdc_meth, lowcut, highext, imA, cur_d, tgt_d)
 
       ax = self.axs[0][0] ; ax.cla() ; ax.imshow(np.abs(cur_d)) ; ax.set_title('cur_d') ; ax.axis('off')
       ax = self.axs[0][1] ; ax.cla() ; ax.imshow(np.abs(tgt_d)) ; ax.set_title('tgt_d') ; ax.axis('off')
@@ -151,14 +200,11 @@ class App:
       self.cvs.draw()
 
       self.imA   = imA
-      self.tgt_d = tgt_d
       self.cur_d = cur_d
+      self.tgt_d = tgt_d
     
     else:  # just differential update
-      mask = im_delta_to_motion(self.tgt_d, thresh=lowcut/255, expand=highext)  # [0, 1]
-      #im_stat(mask, 'mask')
-      new_d = self.cur_d * mask
-      imZ = im_clip(self.imA + new_d)
+      new_d, imZ, mask = fdc_process(fdc_meth, lowcut, highext, self.imA, self.cur_d, self.tgt_d)
 
       ax = self.axs[0][2] ; ax.cla() ; ax.imshow(mask)          ; ax.set_title('mask')  ; ax.axis('off')
       ax = self.axs[1][1] ; ax.cla() ; ax.imshow(np.abs(new_d)) ; ax.set_title('new_d') ; ax.axis('off')

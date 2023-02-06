@@ -23,7 +23,7 @@ DOSKEY sr=%PY_BIN% size_recommend.py $*
 DOSKEY ss=%PY_BIN% sigma_schedule.py $*
 DOSKEY md=%PY_BIN% mask_depth_grid.py $*
 DOSKEY mm=%PY_BIN% mask_motion_grid.py $*
-DOSKEY dmm=%PY_BIN% debug_motion_mask.py $*
+DOSKEY fdc=%PY_BIN% debug_fdc.py $*
 
 ECHO Command shortcuts:
 ECHO   py     start python shell
@@ -32,7 +32,7 @@ ECHO   sr     size_recommend, giving advices on img2img canvas size
 ECHO   ss     sigma_schedule, view schedulers and sigma curves
 ECHO   md     mask_depth_grid, draw grid view of low-cut
 ECHO   mm     mask_motion_grid, draw grid view of low-cut ^& high-ext
-ECHO   dmm    debug_motion_mask, inspect into motion mask frame by frame
+ECHO   fdc    debug_fdc, inspect into the FDC trick frame by frame
 
 CMD /K "activate.bat"
 
