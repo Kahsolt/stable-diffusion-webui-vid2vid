@@ -28,15 +28,6 @@ SET PTRAVEL_PATH=%EXT_PATH%\stable-diffusion-webui-prompt-travel
 REM keep compatible with `extensions/depthmap2mask`
 SET MIDAS_URL=https://github.com/isl-org/MiDaS.git
 SET MIDAS_REPO_PATH=%REPO_PATH%\midas
-SET MIDAS_MODEL_PATH=%MODEL_PATH%\midas
-REM "dpt_large"
-SET MIDAS_MODEL_URL1=https://github.com/intel-isl/DPT/releases/download/1_0/dpt_large-midas-2f21e586.pt
-REM "midas_v21"
-SET MIDAS_MODEL_URL2=https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21-f6b98070.pt
-REM "midas_v21_small"
-SET MIDAS_MODEL_URL3=https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21_small-70d6b9c8.pt
-SET MIDAS_MODEL_URL=%MIDAS_MODEL_URL3%
-SET MIDAS_MODEL_FILE=%MIDAS_MODEL_PATH%\midas_v21_small-70d6b9c8.pt
 
 REM SET DDB_URL=https://github.com/AUTOMATIC1111/TorchDeepDanbooru
 REM SET DDB_MODEL_DIR=deepdanbooru
@@ -48,8 +39,6 @@ ECHO REPO_PATH        = %REPO_PATH%
 ECHO MODEL_PATH       = %MODEL_PATH%
 ECHO PTRAVEL_PATH     = %PTRAVEL_PATH%
 ECHO MIDAS_REPO_PATH  = %MIDAS_REPO_PATH%
-ECHO MIDAS_MODEL_PATH = %MIDAS_MODEL_PATH%
-ECHO MIDAS_MODEL_FILE = %MIDAS_MODEL_FILE%
 ECHO.
 
 REM setup prompt-travel
@@ -78,11 +67,6 @@ IF EXIST %MIDAS_REPO_PATH% GOTO skip_midas
 %GIT_BIN% clone %MIDAS_URL% %MIDAS_REPO_PATH%
 IF ERRORLEVEL 1 GOTO die
 :skip_midas
-
-IF EXIST %MIDAS_MODEL_FILE% GOTO skip_midas_model
-%CURL_BIN% %MIDAS_MODEL_URL% -o %MIDAS_MODEL_FILE%
-IF ERRORLEVEL 1 GOTO die
-:skip_midas_model
 
 ECHO ==================================================
 

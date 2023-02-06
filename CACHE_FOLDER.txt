@@ -2,15 +2,16 @@
 
 <cache-folder>
 ├── <video_filename>
-│   ├── ffprobe.json              // input video info (FFmpeg)
-│   ├── frames\*.(png|jpg)        // extracted frames (FFmpeg)
-│   ├── audio.wav                 // extracted audio track (FFmpeg)
-│   ├── framedelta\*.png          // frame delta (FrameDelta)
-│   ├── depthmask\*.png           // predicted depth mask (MiDaS)
-│   ├── tags.json                 // predicted tags (DeepDanBooru)
-│   ├── tags-topk.txt             // predicted top-k frequent tags (DeepDanBooru)
-│   ├── img2img\*.png             // batch img2img
-│   ├── resr\*.png                // predicted high-resolution frames (Real-ESRGAN)
-│   ├── rife\*.png                // predicted interpolated frames (RIFE)
-│   └── synth-*.(mp4|*)           // vi2vid final output
+│   ├── ffprobe.json          // input video info (FFmpeg)
+│   ├── frames\*.png          // extracted frames (FFmpeg)
+│   ├── audio.wav             // extracted audio track (FFmpeg)
+│   ├── framedelta\*.png      // frame delta (FrameDelta)
+│   ├── motionmask\*.png      // motionmask mask (FrameDelta)
+│   ├── depthmask\*.png       // predicted depth mask (MiDaS)
+│   ├── tags.json             // predicted tags (DeepDanBooru)
+│   ├── tags-topk.txt         // predicted top-k frequent tags (DeepDanBooru)
+│   ├── img2img\*.png         // batch img2img (Stable-Diffusion)
+│   ├── resr\*.png            // predicted high-resolution frames (Real-ESRGAN)
+│   ├── rife\*.png            // predicted interpolated frames (RIFE)
+│   └── synth-*.mp4           // vi2vid final output
 ├ ...
