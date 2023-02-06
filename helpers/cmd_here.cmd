@@ -18,19 +18,21 @@ IF ERRORLEVEL 1 GOTO die
 
 
 DOSKEY py=%PY_BIN% $*
-DOSKEY ss=%PY_BIN% sigma_schedule.py $*
-DOSKEY sr=%PY_BIN% size_recommend.py $*
 DOSKEY im=%PY_BIN% img_utils.py $*
-DOSKEY md=%PY_BIN% mask_depth.py $*
-DOSKEY mm=%PY_BIN% mask_motion.py $*
+DOSKEY sr=%PY_BIN% size_recommend.py $*
+DOSKEY ss=%PY_BIN% sigma_schedule.py $*
+DOSKEY md=%PY_BIN% mask_depth_grid.py $*
+DOSKEY mm=%PY_BIN% mask_motion_grid.py $*
+DOSKEY dmm=%PY_BIN% debug_motion_mask.py $*
 
 ECHO Command shortcuts:
 ECHO   py     start python shell
-ECHO   ss     run sigma_schedule.py, view schedulers and sigma curves
-ECHO   sr     run size_recommend.py, giving advices on img2img canvas size
-ECHO   im     run img_utils.py, inspect basic image info
-ECHO   md     run mask_depth.py, draw grid
-ECHO   mm     run mask_motion.py, draw grid
+ECHO   im     img_utils, inspect basic image info
+ECHO   sr     size_recommend, giving advices on img2img canvas size
+ECHO   ss     sigma_schedule, view schedulers and sigma curves
+ECHO   md     mask_depth_grid, draw grid view of low-cut
+ECHO   mm     mask_motion_grid, draw grid view of low-cut ^& high-ext
+ECHO   dmm    debug_motion_mask, inspect into motion mask frame by frame
 
 CMD /K "activate.bat"
 
