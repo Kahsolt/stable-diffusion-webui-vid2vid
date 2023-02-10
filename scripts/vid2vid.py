@@ -220,8 +220,8 @@ if 'global consts':
     DEFAULT_FDC_METH        = __(LABEL_FDC_METH, FrameDeltaCorrection.STD.value)
     DEFAULT_DELTA_MASK      = __(LABEL_DELTA_MASK, MaskType.MOTION.value)
     DEFAULT_SPATIAL_MASK    = __(LABEL_SPATIAL_MASK, MaskType.NONE.value)
-    DEFAULT_MOTION_HIGHEXT  = __(LABEL_MOTION_HIGHEXT, 7)
-    DEFAULT_MOTION_LOWCUT   = __(LABEL_MOTION_LOWCUT, 0)
+    DEFAULT_MOTION_HIGHEXT  = __(LABEL_MOTION_HIGHEXT, 9)
+    DEFAULT_MOTION_LOWCUT   = __(LABEL_MOTION_LOWCUT, 127)
     DEFAULT_DEPTH_LOWCUT    = __(LABEL_DEPTH_LOWCUT, -1)
     DEFAULT_RESR_MODEL      = __(LABEL_RESR_MODEL, 'realesr-animevideov3-x2')
     DEFAULT_RIFE_MODEL      = __(LABEL_RIFE_MODEL, 'rife-v4')
@@ -892,8 +892,8 @@ class Script(Script):
                         spatial_mask = gr.Dropdown(label=LABEL_SPATIAL_MASK, value=lambda: DEFAULT_SPATIAL_MASK, choices=CHOICES_MASK)
                     with gr.Row(variant='compact').style(equal_height=True) as tab_params:
                         motion_highext = gr.Slider(label=LABEL_MOTION_HIGHEXT, value=lambda: DEFAULT_MOTION_HIGHEXT, minimum=1, maximum=15,  step=2)
-                        motion_lowcut  = gr.Slider(label=LABEL_MOTION_LOWCUT,  value=lambda: DEFAULT_MOTION_LOWCUT,  minimum=0, maximum=255, step=1)
-                        depth_lowcut   = gr.Slider(label=LABEL_DEPTH_LOWCUT,   value=lambda: DEFAULT_DEPTH_LOWCUT,   minimum=0, maximum=255, step=1, interactive=MaskType(DEFAULT_SPATIAL_MASK)==MaskType.DEPTH)
+                        motion_lowcut  = gr.Slider(label=LABEL_MOTION_LOWCUT,  value=lambda: DEFAULT_MOTION_LOWCUT,  minimum=0, maximum=255, step=8)
+                        depth_lowcut   = gr.Slider(label=LABEL_DEPTH_LOWCUT,   value=lambda: DEFAULT_DEPTH_LOWCUT,   minimum=0, maximum=255, step=8, interactive=MaskType(DEFAULT_SPATIAL_MASK)==MaskType.DEPTH)
 
                     def switch_params(delta_mask, spatial_mask):
                         delta_mask   = MaskType(delta_mask)

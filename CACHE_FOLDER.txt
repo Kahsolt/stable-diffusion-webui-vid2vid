@@ -6,7 +6,7 @@
 │   ├── frames\*.png          // extracted frames (FFmpeg)
 │   ├── audio.wav             // extracted audio track (FFmpeg)
 │   ├── framedelta\*.png      // frame delta (FrameDelta)
-│   ├── motionmask\*.png      // motionmask mask (FrameDelta)
+│   ├── motionmask\*.png      // motion mask (FrameDelta)
 │   ├── depthmask\*.png       // predicted depth mask (MiDaS)
 │   ├── tags.json             // predicted tags (DeepDanBooru)
 │   ├── tags-topk.txt         // predicted top-k frequent tags (DeepDanBooru)

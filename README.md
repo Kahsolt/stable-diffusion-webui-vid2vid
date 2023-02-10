@@ -30,7 +30,7 @@ Example:
 
 | vid2vid | original | img2img |
 | :-: | :-: | :-: |
-| ![vid2vid](img/v2v.mp4) | ![original](img/demo.mp4) | ![img2img](img/i2i.mp4) |
+| ![vid2vid](img/v2v.webm) | ![original](img/demo.webm) | ![img2img](img/i2i.webm) |
 
 demo video original source:
 
@@ -62,15 +62,14 @@ Sigma max: 1.2
 Statis correction: shift std
 Delta mask: motion
 Spatial mask: none
-Motion high-ext: 7
+Motion high-ext: 13
 Motion low-cut: 32
-Depth low-cut: -1
+Depth low-cut: (not used)
 RESR model: animevideov3-x2
 RIFE model: rife-v4
 Interpolation ratio: 2
-Export fmt: mp4
+Export fmt: webm
 ```
-
 
 
 ### How it works?
@@ -89,7 +88,7 @@ For sigmas tuning reference, see different schedule methods using the helper scr
 parameter tuning guide:
 
   - initial real sigma numbers for img2img (`~1.0`) are typically smaller than which used in txt2img (`~10.0`), not letting the denoiser to change image content toooo much
-  - in old fashion, we would take a long `steps >= 50` with low `denoising strength ~= 0.5` to truncate the taling part of the whole sigma sequence given by the scheduler, in order to make the annealing steady
+  - in old fashion, we would take a long `steps >= 50` with low `denoising strength ~= 0.5` to truncate the tailing part of the whole sigma sequence given by the scheduler, in order to make the annealing steady
   - now with an overrided low initial sigma `sigma max ~= 1.0`, you can take shorter `steps` and higher `denoising strength`
   - for different schedulers, try `linear` and `exponential` first to understand the behaviour! 😀
   - before the real work, the `single img2img (for debug)` mode in tab `3: Successive img2img` is your playground to tune things~
@@ -107,7 +106,7 @@ tuning guide:
 
   - set to `clip min & max` if the generated images are too different from the references
   - set to `shift std` or `none` otherwise
-  - the `mean` related ones tends to cause global color shift, do not use
+  - the `mean` related ones will cause global color shift to more dark, do not use!
 
 ⚪ delta mask
 
@@ -118,8 +117,8 @@ take the motion mask as an example, see the balance between parameter **high-ext
 
 | high-ext \ low-cut | 0 (more area modifiable) | 255 (less area modifiable) |
 | :-: | :-: | :-: |
-|   1 (area more thin)  |  ![v2v-e1-c0](img/v2v-e1-c0.png) </br> 残留在镜头玻璃上的边角碎片 | ![v2v-e1-c255](img/v2v-e1-c255.png) </br> 和前面所有帧叠加形成重影，趋向于不修改 |
-|  15 (area more thick) | ![v2v-e15-c0](img/v2v-e15-c0.png) </br> 场景内闪烁的局部细节，趋向于无遮罩 | ![v2v-e15-c255](img/v2v-e15-c255.png) </br> 重影但较轻，画面内容稳定 |
+|   1 (area more thin)  |  ![v2v-e1-c0](img/v2v-e1-c0.webm) </br> 残留在镜头玻璃上的边角碎片 | ![v2v-e1-c255](img/v2v-e1-c255.webm) </br> 和前面所有帧叠加形成重影，趋向于不修改 |
+|  15 (area more thick) | ![v2v-e15-c0](img/v2v-e15-c0.webm) </br> 场景内闪烁的局部细节，趋向于无遮罩 | ![v2v-e15-c255](img/v2v-e15-c255.webm) </br> 重影但较轻，画面内容稳定 |
 
 tuning guide:
 
