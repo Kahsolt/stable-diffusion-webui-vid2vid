@@ -57,12 +57,14 @@ Sampling steps: 20
 Denoising strength: 0.75
 Init noise weight: 1.0
 Sigma method: exponential
-Sigma sigma min: 0.1
-Sigma sigma max: 1.2
-Statistical correction: shift std
-Motion mask highext: 7
-Motion mask lowcut: 32
-Depth mask lowcut: -1
+Sigma min: 0.1
+Sigma max: 1.2
+Statis correction: shift std
+Delta mask: motion
+Spatial mask: none
+Motion high-ext: 7
+Motion low-cut: 32
+Depth low-cut: -1
 RESR model: animevideov3-x2
 RIFE model: rife-v4
 Interpolation ratio: 2
@@ -75,16 +77,16 @@ Export fmt: mp4
 
 ![How it works](img/How%20it%20works.png)
 
-⚪ Sigma schedule
+#### Sigma schedule
 
-**Sigma schedule** controls the magnitude to denoise a latent image at each sampling step, and it should be an annealing process so that the final painting converges to some local optimal.
+Sigma schedule controls the magnitude to denoise a latent image at each sampling step, and it should be an annealing process so that the final painting converges to some local optimal.
 This extension allows you to override the default sigma scheduling, now you can fine-tune the annealing process on your own.  
 
 For sigmas tuning reference, see different schedule methods using the helper script [helpers/sigma_schedule.py](helpers/sigma_schedule.py):
 
 ![sigma_schedule](img/sigma_schedule.png)
 
-Notes:
+parameter tuning guide:
 
   - initial real sigma numbers for img2img (`~1.0`) are typically smaller than which used in txt2img (`~10.0`), not letting the denoiser to change image content toooo much
   - in old fashion, we would take a long `steps >= 50` with low `denoising strength ~= 0.5` to truncate the taling part of the whole sigma sequence given by the scheduler, in order to make the annealing steady
@@ -92,25 +94,44 @@ Notes:
   - for different schedulers, try `linear` and `exponential` first to understand the behaviour! 😀
   - before the real work, the `single img2img (for debug)` mode in tab `3: Successive img2img` is your playground to tune things~
 
-⚪ Frame delta correction (FDC)
+#### Frame delta correction (FDC)
 
 The original batch img2img might still not be that consistent, successive or stable in re-painted details even with fine-tuned sigma schedule. 🤔
-We further apply **stats correction & motion mask** using [frame delta](#concepts):  
+We further apply **stats correction & delta mask** using [frame delta](#furthur-things-to-know):  
 
-- match the delta for generated frames with the originals in statistics
-- transform the delta as a kind of motion mask (rather depth mask)
+⚪ stats correction
 
-use the fdc debugger to understand tunable FDC parameters:
+Stats correction matches the frame delta for generated frames with the references in statistics. 
 
-![dbg_fdc](img/dbg_fdc.png)
+tuning guide:
 
-the balance between **high-ext** and **low-cut** when motion mask is used as a **differential mask**:
+  - set to `clip min & max` if the generated images are too different from the references
+  - set to `shift std` or `none` otherwise
+  - the `mean` related ones tends to cause global color shift, do not use
+
+⚪ delta mask
+
+Delta mask is parallel to the lagacy spacial mask (e.g. alpha-channel, depth-map or just hand-drawn), which masks on the differentials of the two successive images rather than the one image itself. 
+You could take either motion or depth as the delta mask. => see [further things](#furthur-things-to-know)
+
+take the motion mask as an example, see the balance between parameter **high-ext** and **low-cut**:
 
 | high-ext \ low-cut | 0 (more area modifiable) | 255 (less area modifiable) |
 | :-: | :-: | :-: |
-|   1 (area more thin)  |  ![v2v-e1-c0](img/v2v-e1-c0.png) </br> 残留在镜头玻璃上的边角碎片 | ![v2v-e1-c255](img/v2v-e1-c255.png) </br> 和前面所有帧叠加形成重影 |
-|  15 (area more thick) | ![v2v-e15-c0](img/v2v-e15-c0.png) </br> 场景内闪烁的局部细节，趋向于无遮罩 | ![v2v-e15-c255](img/v2v-e15-c255.png) </br> |
+|   1 (area more thin)  |  ![v2v-e1-c0](img/v2v-e1-c0.png) </br> 残留在镜头玻璃上的边角碎片 | ![v2v-e1-c255](img/v2v-e1-c255.png) </br> 和前面所有帧叠加形成重影，趋向于不修改 |
+|  15 (area more thick) | ![v2v-e15-c0](img/v2v-e15-c0.png) </br> 场景内闪烁的局部细节，趋向于无遮罩 | ![v2v-e15-c255](img/v2v-e15-c255.png) </br> 重影但较轻，画面内容稳定 |
 
+tuning guide:
+
+  - set `highext = 15`
+  - move `lowcut` from `255` down to `0`, find a point that the ghost shadows disappears
+  - move `highext` from `15` down to `1` to allow more painting details to be modified
+  - balance `lowcut` and `highext` at some local optimal
+
+and remember the extremes:
+
+  - `highext -> inf & lowcut -> 0`: open to modifications, no re-correction, no restrains, more like naive img2img
+  - `highext -> 1 & lowcut -> inf`: conservative to modifications, leading to heavy ghost shadow
 
 #### furthur things to know
 
@@ -120,23 +141,26 @@ what a frame delta look like:
 | :-: | :-: |
 | frame delta in most static cases is grey | frame delta on scene changing is a ghost shadow mixng two images |
 
-motion mask vs depth mask, the material to extract a mask:
+motion mask vs depth mask, the **thing** as a mask:
 
 | type | ![mask_motion](img/mask_motion.png) <br/> **motion mask** | ![mask_depth](img/mask_depth.png) <br/> **depth mask** |
 | :-: | :-: | :-: |
 | highlights area of | varying areas between successive frames, mostly the line edges | foreground object areas in a static sense, usually large patches |
-| how to obtain | generated from the frame delta | predicted by depth-map model MiDaS |
-| can be applied as | spatial & delta mask | spatial mask |
+| how to obtain | transformed from the frame delta | predicted by depth-map model MiDaS |
 
 ℹ you could also try use these two masks together~ 😃  
-ℹ depth as spatial masks are applied first to filter out the foreground changes, then the motion as delta masks will decline non-edging changes, keeping large color blocks like cloth texture stable
+ℹ e.g.: firstly apply depth as spatial mask to filter out the foreground changes, then apply motion as delta mask to decline non-edging changes, keeping large color blocks like cloth texture stable
 
-spatial mask vs delta mask, deciding the target object to mask on:
+delta mask vs spatial mask, the **way** to mask on:
 
-| type | spatial mask | delta mask | 
+| type | delta mask | spatial mask |
 | :-: | :-: | :-: |
-| masks on | one image | delta of two images |
-| apply eqv. | `out = mask * new + (1 - mask) * old` | `out = old + (new - old) * mask` |
+| masks on | delta of two images | one image |
+| apply eqv. | `out = old + (new - old) * mask` | `out = mask * new + (1 - mask) * old` |
+
+use the fdc debugger to further understand tunable FDC parameters:
+
+![dbg_fdc](img/dbg_fdc.png)
 
 
 ### Installation

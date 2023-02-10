@@ -7,7 +7,9 @@ from PIL import Image, ImageFilter
 from PIL.Image import Image as PILImage
 from typing import Tuple, List, Union
 
+from torch import Tensor
 import torch
+import torch.nn as nn
 from torchvision.utils import make_grid
 import numpy as np
 from numpy.typing import NDArray
@@ -30,6 +32,7 @@ def valid_img(fn):
 def valid_im(fn):
   def wrapper(im:npimg, *args, **kwargs):
     assert isinstance(im, np.ndarray)
+    assert len(im.shape) == 3
     assert 0.0 <= im.min() and im.max() <= 1.0
     assert im.dtype == dtype
 
@@ -43,6 +46,16 @@ def valid_delta(fn):
     assert im.dtype == dtype
 
     return fn(im, *args, **kwargs)
+  return wrapper
+
+def valid_X(fn):
+  def wrapper(X:Tensor, *args, **kwargs):
+    assert isinstance(X, Tensor)
+    assert len(X.shape) == 4
+    assert X.shape[0] == 1
+    assert X.shape[1] in [1, 3]
+
+    return fn(X, *args, **kwargs)
   return wrapper
 
 ''' PIL Image '''
@@ -123,6 +136,7 @@ def im_norm(im:npimg, chan_wise=True, ret_stats=False) -> Union[npimg, Tuple[npi
   else:
     return (im - avg) / std
 
+
 @valid_delta
 def im_shift_01(im:npimg) -> npimg:
   return (im + 1) / 2
@@ -150,21 +164,26 @@ def im_mask_highcut(im:npimg, thresh:float=0.0) -> npimg:
   im_high = np.ones_like(im) * ~mask
   return im_low + im_high
 
-def im_mask_highext(im:npimg, size:int=7) -> npimg:
-  # expand hot area by a Max filter
+
+def im_highext_torch(im:npimg, k:int=7) -> npimg:
+  X = im_to_X(im)
+  X = nn.MaxPool2d(kernel_size=k, stride=1, padding=k//2)(X)
+  im = X_to_im(X)
+  return im
+
+def im_highext_pil(im:npimg, size:int=7) -> npimg:
   img = im_to_img(im)
   img = img.filter(ImageFilter.MaxFilter(size=size))
-  #img = img.filter(ImageFilter.GaussianBlur(radius=size//2+1))
-  return img_to_im(img)
+  im = img_to_im(img)
+  return im
 
 @valid_delta
 def im_delta_to_motion(im:npimg, thresh:float=0.0, expand:int=7, px:int=4) -> npimg:
   assert type(thresh) == float
 
-  if 'to grey':
+  if 'to grey' and im.shape[-1] == 3:
     im = im_shift_01(im)
-    img = im_to_img(im).convert('L')
-    im = img_to_im(img)
+    im = img_to_im(im_to_img(im).convert('L'))
     im = im_shift_n1p1(im)
   
   im = np.abs(im)                     # [0.0, 1.0], get the magnitude (maxval may < 1.0)
@@ -173,9 +192,9 @@ def im_delta_to_motion(im:npimg, thresh:float=0.0, expand:int=7, px:int=4) -> np
   F = -np.log2(1 - px/255) ** -1      # high-boost, 使得像素差值 px 的 mask 强度为 0.5
   alpha = (1 - thresh) * F            # 颠倒一下数值映射顺序
   im = 1 - (1 - im) ** (1 + alpha)    # some concave function on [0.0, 1.0], boost up values
-  if 'debug':
-    print('mask.avg:', im.mean())
-  return im_mask_highext(im, expand)  # high-ext
+  im = im_highext_torch(im, expand)   # high-ext
+  return im
+
 
 def show_img(im:npimg, title=None):
   plt.clf()
@@ -209,6 +228,20 @@ def im_to_img(im:npimg) -> PILImage:
   im = (im * np.iinfo(np.uint8).max).astype(np.uint8)   # [0, 255]
   if im.shape[-1] == 1: im = im.squeeze(axis=-1)        # [H, W, C=3] or # [H, W]
   return Image.fromarray(im)                            # 'RGB' or 'L'
+
+@valid_im
+def im_to_X(im:npimg) -> Tensor:
+  im = im.transpose([2, 0, 1])  # [H, W, C=1] => [C=1, H, W]
+  X = torch.from_numpy(im)      # [C=1, H, W]
+  X.unsqueeze_(dim=0)           # [B=1, C=1, H, W]
+  return X
+
+@valid_X
+def X_to_im(X:Tensor) -> npimg:
+  X = X.squeeze(dim=0)          # [B=1, C=1, H, W]
+  im = X.numpy()                # [C=1, H, W]
+  im = im.transpose([1, 2, 0])  # [H, W, C=1]
+  return im
 
 
 if __name__ == '__main__':
