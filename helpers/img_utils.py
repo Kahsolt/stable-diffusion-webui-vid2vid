@@ -32,7 +32,7 @@ def valid_img(fn):
 def valid_im(fn):
   def wrapper(im:npimg, *args, **kwargs):
     assert isinstance(im, np.ndarray)
-    assert len(im.shape) == 3
+    assert len(im.shape) == 3     # [H, W, C=1/3]
     assert 0.0 <= im.min() and im.max() <= 1.0
     assert im.dtype == dtype
 

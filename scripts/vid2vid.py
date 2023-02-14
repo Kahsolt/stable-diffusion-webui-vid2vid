@@ -104,6 +104,7 @@ class ExtractFrame(Enum):
 
 class MidasModel(Enum):
     DPT_LARGE       = 'dpt_large'
+    DPT_HYBRID      = 'dpt_hybrid'
     MIDAS_V21       = 'midas_v21'
     MIDAS_V21_SMALL = 'midas_v21_small'
 
@@ -547,6 +548,7 @@ def _btn_midas(midas_model) -> TaskResponse:
     try:
         urls = {
             MidasModel.DPT_LARGE:       'https://github.com/intel-isl/DPT/releases/download/1_0/dpt_large-midas-2f21e586.pt',
+            MidasModel.DPT_HYBRID:      'https://github.com/intel-isl/DPT/releases/download/1_0/dpt_hybrid-midas-501f0c75.pt',
             MidasModel.MIDAS_V21:       'https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21-f6b98070.pt',
             MidasModel.MIDAS_V21_SMALL: 'https://github.com/AlexeyAB/MiDaS/releases/download/midas_dpt/midas_v21_small-70d6b9c8.pt',
         }
@@ -559,6 +561,11 @@ def _btn_midas(midas_model) -> TaskResponse:
 
         if   midas_model == MidasModel.DPT_LARGE:
             model = DPTDepthModel(path=model_path, backbone="vitl16_384", non_negative=True)
+            net_w, net_h = 384, 384
+            resize_mode = 'minimal'
+            normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        elif midas_model == MidasModel.DPT_HYBRID:
+            model = DPTDepthModel(path=model_path, backbone="vitb_rn50_384", non_negative=True)
             net_w, net_h = 384, 384
             resize_mode = 'minimal'
             normalization = NormalizeImage(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
@@ -604,12 +611,13 @@ def _btn_midas(midas_model) -> TaskResponse:
                 pred = model.forward(X)
 
                 depth = F.interpolate(pred.unsqueeze(1), size=im.shape[:2], mode='bicubic', align_corners=False)
-                depth = depth.squeeze().cpu().numpy().astype(dtype)   # [H, W], float16
+                depth = depth.squeeze().cpu().numpy().astype(dtype) # [H, W], float32
                 vmin, vmax = depth.min(), depth.max()
                 if vmax - vmin > np.finfo(depth.dtype).eps:
                     depth_n = (depth - vmin) / (vmax - vmin)
                 else:
                     depth_n = np.zeros_like(depth)
+                depth_n = np.expand_dims(depth_n, axis=-1)          # [H, W, C=1]
 
                 img = im_to_img(depth_n)
                 img.save(out_dp / f'{Path(fn).stem}.png')
