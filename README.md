@@ -173,9 +173,14 @@ use the fdc debugger to further understand tunable FDC parameters:
 
 - install prompt-travel extension
   - `cd <SD>\extensions`
-  - `git clone https://github.com/Kahsolt/stable-diffusion-webui-vid2vid.git`
-  - `cd stable-diffusion-webui-vid2vid\tools`
+  - `git clone https://github.com/Kahsolt/stable-diffusion-webui-prompt-travel.git`
+  - `cd stable-diffusion-webui-prompt-travel\tools`
   - run `install.cmd` to install the post-processing tools
+- install vid2vid extension
+  - `cd <SD>\extensions`
+  - `git clone https://github.com/Kahsolt/stable-diffusion-webui-vid2vid.git`
+  - `cd stable-diffusion-webui-vid2vid`
+  - `mklink /J tools ..\stable-diffusion-webui-prompt-travel\tools`
 - install MiDaS
   - `cd <SD>\repositories`
   - `git clone https://github.com/isl-org/MiDaS.git midas`
