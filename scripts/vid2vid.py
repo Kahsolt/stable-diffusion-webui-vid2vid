@@ -779,7 +779,10 @@ def _btn_ffmpeg_export(export_fmt:str, frame_src:str, extract_fmt:str, extract_f
         return list(exts)[0]
 
     try:
-        sh(f'"{FFMPEG_BIN}"{audio_opts} -framerate {get_real_fps()} -i "{in_dp}\\%05d{get_ext()}" -crf 20 -c:v libx264 -pix_fmt yuv420p "{out_fp}"')
+        try:
+            sh(f'"{FFMPEG_BIN}"{audio_opts} -framerate {get_real_fps()} -i "{in_dp}\\%05d{get_ext()}" -crf 20 -c:v libx264 -pix_fmt yuv420p "{out_fp}"')
+        except:
+            sh(f'"{FFMPEG_BIN}"{audio_opts} -framerate {get_real_fps()} -i "{in_dp}\\%05d{get_ext()}" "{out_fp}"')
 
         return RetCode.INFO, f'filesize: {get_file_size(out_fp):.3f}'
     except KeyboardInterrupt:
